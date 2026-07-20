@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bufferbloat Shaper</string>
+
+    <!-- Dashboard -->
+    <string name="shaper_enabled">Shaper Active</string>
+    <string name="shaper_disabled">Shaper Off</string>
+    <string name="tap_to_enable">Tap to enable traffic shaping</string>
+    <string name="tap_to_disable">Tap to disable traffic shaping</string>
+    <string name="active_flows">Active Flows</string>
+    <string name="upload_rate">Upload Rate</string>
+    <string name="download_rate">Download Rate</string>
+    <string name="current_latency">Current Latency</string>
+    <string name="queue_depth">Queue Depth</string>
+    <string name="drops">Drops</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Shaper Settings</string>
+    <string name="manual_rate_entry">Manual Rate Entry</string>
+    <string name="upload_limit_mbps">Upload Limit (Mbps)</string>
+    <string name="download_limit_mbps">Download Limit (Mbps)</string>
+    <string name="auto_calibration">Auto-Calibration</string>
+    <string name="auto_calibration_desc">Automatically adjust rates based on measured network capacity using passive + active probing</string>
+    <string name="headroom_factor">Headroom Factor</string>
+    <string name="headroom_desc">Percentage of estimated capacity to use (lower = more bufferbloat protection, higher = more throughput)</string>
+    <string name="smart_mode">Adaptive Smart Mode</string>
+    <string name="smart_mode_desc">Automatically detect latency-sensitive flows (calls, games) and prioritize them</string>
+
+    <!-- Validation -->
+    <string name="run_test">Run Bufferbloat Test</string>
+    <string name="test_running">Testing…</string>
+    <string name="idle_latency">Idle Latency</string>
+    <string name="loaded_latency">Loaded Latency</string>
+    <string name="added_latency">Added Latency (Bufferbloat)</string>
+    <string name="grade">Grade</string>
+    <string name="before_shaping">Before Shaping</string>
+    <string name="after_shaping">After Shaping</string>
+
+    <!-- Stats -->
+    <string name="stats_title">Live Statistics</string>
+    <string name="per_flow_stats">Per-Flow Statistics</string>
+    <string name="egress_stats">Egress Shaper</string>
+    <string name="ingress_stats">Ingress Controller</string>
+    <string name="calibration_stats">Calibration</string>
+
+    <!-- Notifications -->
+    <string name="vpn_channel_name">Traffic Shaper</string>
+    <string name="vpn_channel_desc">Shows shaper status while active</string>
+    <string name="notification_shaping_active">Shaping active — %1$s↑ %2$s↓</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+
+    <!-- Disclaimers (§10) -->
+    <string name="disclaimer_title">What This App Does &amp; Doesn\'t Do</string>
+    <string name="disclaimer_no_band_forcing">This app does NOT force 5G SA, NSA, or carrier aggregation — those are network-controlled decisions outside any app\'s control.</string>
+    <string name="disclaimer_quic_limit">Download shaping is effective for TCP traffic but has no effect on QUIC/UDP-heavy downloads (e.g., some video streaming over HTTP/3). This is a fundamental protocol limitation, not a bug.</string>
+    <string name="disclaimer_statistical">The chosen shaping rate is a statistical estimate of near-future network capacity. A sudden, large drop in signal can still cause a brief latency spike before recalibration catches up.</string>
+    <string name="disclaimer_vpn">This app uses Android\'s VPN interface purely as a local traffic interception mechanism. NO traffic is routed through any remote server. All connections go directly from your device to their real destinations.</string>
+    <string name="disclaimer_battery">Running a local traffic relay adds some CPU overhead. Battery impact is typically in the low single-digit percentage range during active data use.</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_test">Test</string>
+    <string name="nav_settings">Settings</string>
+</resources>

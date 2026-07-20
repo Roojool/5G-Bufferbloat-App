@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary brand palette -->
+    <color name="primary">#FF6C5CE7</color>
+    <color name="primary_variant">#FF5A4BD1</color>
+    <color name="on_primary">#FFFFFFFF</color>
+
+    <!-- Secondary accent -->
+    <color name="secondary">#FF00D2FF</color>
+    <color name="secondary_variant">#FF00B8E6</color>
+    <color name="on_secondary">#FF0A0E21</color>
+
+    <!-- Surface / background (dark theme) -->
+    <color name="background">#FF0A0E21</color>
+    <color name="surface">#FF141832</color>
+    <color name="surface_elevated">#FF1E2347</color>
+    <color name="on_background">#FFEAECF4</color>
+    <color name="on_surface">#FFEAECF4</color>
+
+    <!-- Status colors -->
+    <color name="success">#FF00E676</color>
+    <color name="warning">#FFFFAB40</color>
+    <color name="error">#FFFF5252</color>
+
+    <!-- Grade colors -->
+    <color name="grade_a">#FF00E676</color>
+    <color name="grade_b">#FF69F0AE</color>
+    <color name="grade_c">#FFFFAB40</color>
+    <color name="grade_d">#FFFF6E40</color>
+    <color name="grade_f">#FFFF5252</color>
+
+    <!-- Gauge gradient -->
+    <color name="gauge_start">#FF6C5CE7</color>
+    <color name="gauge_end">#FF00D2FF</color>
+
+    <!-- Glass effect -->
+    <color name="glass_background">#1AFFFFFF</color>
+    <color name="glass_border">#33FFFFFF</color>
+
+    <!-- Launcher icon -->
+    <color name="ic_launcher_background">#FF0A0E21</color>
+</resources>
