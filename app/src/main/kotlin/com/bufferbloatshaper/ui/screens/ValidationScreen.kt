@@ -103,7 +103,7 @@ fun ValidationScreen(
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.SpeedOutlined, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Test Before")
             }
