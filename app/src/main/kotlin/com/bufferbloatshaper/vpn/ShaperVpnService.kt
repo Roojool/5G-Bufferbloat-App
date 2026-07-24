@@ -259,15 +259,20 @@ class ShaperVpnService : VpnService() {
         // Start the main packet processing loop
         startPacketLoop(scope, reader)
 
-        // Periodic maintenance
+        // Periodic maintenance and shaper metric logging
         scope.launch {
+            var counter = 0
             while (isActive) {
-                delay(30_000)
-                relay.cleanupStaleConnections()
-                udp.cleanupStaleSessions()
-                shaper.cleanup()
-                flowClassifier?.cleanup()
-                updateNotificationStats()
+                delay(5000)
+                counter++
+                Log.d(TAG, "EgressShaper metrics: enqueued=${shaper.totalPacketsEnqueued.get()} pkts, shaped=${shaper.totalPacketsShaped.get()} pkts / ${shaper.totalBytesShaped.get()} bytes")
+                if (counter % 6 == 0) {
+                    relay.cleanupStaleConnections()
+                    udp.cleanupStaleSessions()
+                    shaper.cleanup()
+                    flowClassifier?.cleanup()
+                    updateNotificationStats()
+                }
             }
         }
 
@@ -384,22 +389,70 @@ class ShaperVpnService : VpnService() {
     }
 
     /**
-     * Handle ICMP packet — passthrough without shaping.
-     * ICMP is critical for Path MTU Discovery and connectivity checks.
-     * FIX for F4: actually forward the packet instead of dropping it.
+     * Handle ICMP packet.
+     *
+     * Android doesn't allow raw ICMP sockets without root, so we can't
+     * actually relay ICMP to the real destination. Instead, for Echo Requests
+     * (type 8), we generate a local Echo Reply (type 0) by:
+     *   1. Swapping src/dst IP addresses
+     *   2. Changing ICMP type from 8 (Echo Request) to 0 (Echo Reply)
+     *   3. Recomputing the ICMP checksum
+     *   4. Recomputing the IP header checksum
+     *
+     * This keeps ping working through the VPN (measuring loopback latency
+     * to the VPN interface itself, not real RTT to the target — but it
+     * prevents ping from hanging/failing entirely, which breaks apps that
+     * use connectivity checks).
+     *
+     * Non-Echo-Request ICMP (Destination Unreachable, Time Exceeded, etc.)
+     * is silently dropped — those originate from routers along the path,
+     * which we can't synthesize meaningfully.
      */
     private fun handleIcmpPacket(ipPacket: IpPacket, buffer: ByteBuffer) {
-        // For ICMP, we do a simple write-back passthrough.
-        // In a full implementation, we'd open a raw socket and forward.
-        // For now, the VPN builder's routing ensures ICMP reaches its destination
-        // through the underlying network. The TUN interface handles the delivery.
-        //
-        // Note: Android doesn't allow raw ICMP sockets without root,
-        // so true ICMP relay is not possible. The VPN builder's route setup
-        // means ICMP packets to the TUN interface are effectively responses
-        // that should be passed back. We write them back to TUN.
-        val rawPacket = ipPacket.toByteArray()
-        packetWriter?.writePacket(rawPacket)
+        val headerLen = ipPacket.headerLength
+        val totalLen = ipPacket.totalLength
+        val icmpOffset = headerLen
+        val icmpLen = totalLen - headerLen
+
+        // Need at least 8 bytes for ICMP header (type, code, checksum, id, seq)
+        if (icmpLen < 8) return
+
+        val icmpType = buffer.get(icmpOffset).toInt() and 0xFF
+
+        // Only handle Echo Request (type 8)
+        if (icmpType != 8) return
+
+        // Copy the entire packet so we can modify it
+        val packet = ipPacket.toByteArray()
+
+        // 1. Swap src and dst IP addresses in the IP header (offsets 12-15 and 16-19)
+        for (i in 0..3) {
+            val tmp = packet[12 + i]
+            packet[12 + i] = packet[16 + i]
+            packet[16 + i] = tmp
+        }
+
+        // 2. Change ICMP type from 8 (Echo Request) to 0 (Echo Reply)
+        //    ICMP code stays 0, identifier and sequence number stay the same
+        packet[icmpOffset] = 0
+
+        // 3. Recompute ICMP checksum (covers the entire ICMP message)
+        //    Zero out existing checksum field first
+        packet[icmpOffset + 2] = 0
+        packet[icmpOffset + 3] = 0
+        val icmpChecksum = PacketBuilder.computeChecksum(packet, icmpOffset, icmpLen)
+        packet[icmpOffset + 2] = (icmpChecksum shr 8).toByte()
+        packet[icmpOffset + 3] = (icmpChecksum and 0xFF).toByte()
+
+        // 4. Recompute IP header checksum (src/dst IPs changed)
+        packet[10] = 0
+        packet[11] = 0
+        val ipChecksum = PacketBuilder.computeChecksum(packet, 0, headerLen)
+        packet[10] = (ipChecksum shr 8).toByte()
+        packet[11] = (ipChecksum and 0xFF).toByte()
+
+        // Write the Echo Reply back to TUN
+        packetWriter?.writePacket(packet)
     }
 
     /**
