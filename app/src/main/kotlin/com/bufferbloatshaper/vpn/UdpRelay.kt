@@ -116,8 +116,15 @@ class UdpRelay(
         dstIp: ByteArray
     ): UdpSession? {
         return try {
-            val socket = DatagramSocket()
-            vpnService.protect(socket)
+            // Create unbound socket so protect() & physicalNetwork.bindSocket() occur BEFORE binding
+            val socket = DatagramSocket(null)
+            if (!NetworkUtils.protectAndBind(vpnService, socket)) {
+                Log.e(TAG, "Aborting UDP session for $key: socket protection failed!")
+                socket.close()
+                return null
+            }
+
+            socket.bind(InetSocketAddress(0))
             socket.soTimeout = 0 // Non-blocking reads handled by coroutine
 
             val dstAddress = InetAddress.getByAddress(dstIp)

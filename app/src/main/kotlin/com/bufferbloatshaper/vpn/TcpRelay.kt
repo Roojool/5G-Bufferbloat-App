@@ -178,8 +178,13 @@ class TcpRelay(
                 val channel = SocketChannel.open()
                 channel.configureBlocking(false)
 
-                // CRITICAL: protect this socket from the VPN tunnel
-                vpnService.protect(channel.socket())
+                // CRITICAL: protect this socket from the VPN tunnel & bind to physical network
+                if (!NetworkUtils.protectAndBind(vpnService, channel.socket())) {
+                    Log.e(TAG, "Aborting connection $key: socket protection failed!")
+                    try { channel.close() } catch (_: Exception) {}
+                    closeConnection(key)
+                    return@launch
+                }
 
                 // Apply receive buffer size for download shaping (Phase 3)
                 val rxBufSize = ingressReceiveBufferSize
