@@ -179,26 +179,35 @@ class BufferbloatTest {
      */
     private suspend fun saturateConnection() {
         coroutineScope {
-            // Multiple concurrent downloads to fully saturate
             repeat(3) { i ->
                 launch(Dispatchers.IO) {
+                    var totalBytesStreamed = 0L
+                    val startTime = System.currentTimeMillis()
                     while (isActive) {
                         try {
-                            val url = downloadUrls[i % downloadUrls.size]
-                            val conn = URL(url).openConnection() as HttpURLConnection
+                            val urlStr = downloadUrls[i % downloadUrls.size]
+                            Log.d(TAG, "Saturate worker #$i starting download from $urlStr")
+                            val conn = URL(urlStr).openConnection() as HttpURLConnection
                             conn.connectTimeout = 5000
                             conn.readTimeout = 10000
                             conn.connect()
 
                             val buffer = ByteArray(8192)
                             val input = conn.inputStream
-                            while (isActive && input.read(buffer) != -1) {
-                                // Just consume the data to saturate the link
+                            var readBytes = 0
+                            while (isActive && input.read(buffer).also { readBytes = it } != -1) {
+                                totalBytesStreamed += readBytes
+                                if (totalBytesStreamed % (1024 * 1024) < 8192) {
+                                    val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
+                                    val mbps = if (elapsedSec > 0) (totalBytesStreamed * 8.0 / 1_000_000.0) / elapsedSec else 0.0
+                                    Log.d(TAG, "Worker #$i downloaded ${totalBytesStreamed / (1024 * 1024)} MB in ${"%.2f".format(elapsedSec)}s (${"%.2f".format(mbps)} Mbps)")
+                                }
                             }
                             input.close()
                             conn.disconnect()
                         } catch (e: Exception) {
-                            delay(100) // Brief pause on error, then retry
+                            Log.w(TAG, "Saturate worker #$i encountered error: ${e.message}")
+                            delay(100)
                         }
                     }
                 }
