@@ -26,6 +26,7 @@ class TokenBucket(
      */
     @Synchronized
     fun tryConsume(bytes: Int): Boolean {
+        if (rateBytesPerSec <= 0.0) return true
         refill()
         if (tokens < bytes) return false
         tokens -= bytes
@@ -34,10 +35,11 @@ class TokenBucket(
 
     /**
      * How many nanoseconds until [bytes] tokens will be available.
-     * Returns 0 if tokens are already available.
+     * Returns 0 if tokens are already available or rate limit is disabled (<= 0).
      */
     @Synchronized
     fun nanosUntilAvailable(bytes: Int): Long {
+        if (rateBytesPerSec <= 0.0) return 0L
         refill()
         val deficit = bytes - tokens
         return if (deficit <= 0) 0L

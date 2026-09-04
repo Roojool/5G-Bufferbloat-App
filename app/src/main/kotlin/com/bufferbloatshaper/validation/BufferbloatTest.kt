@@ -148,7 +148,7 @@ class BufferbloatTest {
             // Method 1: TCP connect timing (more accurate than HTTP HEAD)
             val start = System.nanoTime()
             val socket = java.net.Socket()
-            socket.connect(java.net.InetSocketAddress(target, 53), 5000)
+            socket.connect(java.net.InetSocketAddress(target, 53), 1000)
             val elapsed = (System.nanoTime() - start) / 1_000_000.0
             socket.close()
             elapsed
