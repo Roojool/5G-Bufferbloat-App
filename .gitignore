@@ -2,6 +2,8 @@
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
+# Local Gradle distributions are reproducible via the wrapper and must not be versioned.
+gradle-[0-9]*/
 
 # IDE
 .idea/
@@ -13,6 +15,15 @@ app/build/
 app/release/
 *.apk
 *.aab
+*.hprof
+
+# Android native build, profiling, and captured-device output
+.cxx/
+.externalNativeBuild/
+captures/
+
+# Local diagnostic output
+build_error.log
 
 # OS
 .DS_Store
