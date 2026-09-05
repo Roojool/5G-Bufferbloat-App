@@ -249,7 +249,7 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
                 ConfigRow("Upload cap", "%.1f Mbps".format(ShaperConfig.bytesSecToMbps(displayConfig.egressRateBytesPerSec)))
                 ConfigRow("Download cap", "%.1f Mbps".format(ShaperConfig.bytesSecToMbps(displayConfig.ingressRateBytesPerSec)))
                 ConfigRow("App routing", displayConfig.appRoutingPolicy.mode.name.replace('_', ' ').lowercase())
-                ConfigRow("IPv6", if (runtime.ipv6Supported) "Supported" else "Disabled pending native tests")
+                ConfigRow("IPv6", if (runtime.ipv6Supported) "Supported" else "Bypasses IPv4-only engine pending tests")
             }
         }
 

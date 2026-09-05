@@ -3,9 +3,10 @@
 #include "bufferbloat_native_engine.h"
 
 #include <cstdint>
+#include <limits>
 #include <mutex>
+#include <new>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace {
 
@@ -18,7 +19,6 @@ constexpr jsize kFlowMetricsArraySize = 10;
 
 JavaVM* g_java_vm = nullptr;
 std::mutex g_handles_mutex;
-std::unordered_set<BbNativeEngine*> g_live_handles;
 
 struct SocketProtectorContext {
     JavaVM* java_vm;
@@ -26,26 +26,73 @@ struct SocketProtectorContext {
     jmethodID protect_socket_method;
 };
 
-/* Each context is released only after bb_native_engine_stop has joined all
- * engine workers. That ownership rule prevents native workers from calling a
- * deleted global Java reference during teardown. */
-std::unordered_map<BbNativeEngine*, SocketProtectorContext*> g_socket_protectors;
+/*
+ * Kotlin receives a monotonic token, never an engine address. This avoids an
+ * ABA bug where allocator reuse could make an old Java Session operate on a
+ * newly-created engine at the same address. The global lock intentionally
+ * serializes bridge calls with destroy; a real engine remains responsible for
+ * its own worker synchronization and the stop/join contract in the C header.
+ */
+struct EngineEntry {
+    BbNativeEngine* engine = nullptr;
+    SocketProtectorContext* protector_context = nullptr;
+    bool start_attempted = false;
+    bool stop_confirmed = false;
+};
 
-BbNativeEngine* pointerFromHandle(jlong handle) {
-    if (handle == 0) {
-        return nullptr;
-    }
-    return reinterpret_cast<BbNativeEngine*>(static_cast<uintptr_t>(handle));
+std::unordered_map<jlong, EngineEntry> g_live_engines;
+jlong g_next_handle = 1;
+bool g_shutdown_quarantined = false;
+
+jlong nextOpaqueHandleLocked() {
+    const jlong first_candidate = g_next_handle;
+    do {
+        const jlong candidate = g_next_handle;
+        g_next_handle = candidate == std::numeric_limits<jlong>::max()
+            ? 1
+            : candidate + 1;
+        if (g_live_engines.find(candidate) == g_live_engines.end()) {
+            return candidate;
+        }
+    } while (g_next_handle != first_candidate);
+    return 0;
 }
 
 template <typename Operation>
 int32_t withLiveEngine(jlong handle, Operation operation) {
     std::lock_guard<std::mutex> lock(g_handles_mutex);
-    BbNativeEngine* const engine = pointerFromHandle(handle);
-    if (engine == nullptr || g_live_handles.find(engine) == g_live_handles.end()) {
+    const auto iterator = g_live_engines.find(handle);
+    if (handle == 0 || iterator == g_live_engines.end() || iterator->second.engine == nullptr) {
         return BB_NATIVE_STATUS_INVALID_ARGUMENT;
     }
-    return operation(engine);
+    try {
+        return operation(iterator->second);
+    } catch (...) {
+        return BB_NATIVE_STATUS_INTERNAL_ERROR;
+    }
+}
+
+int32_t stopEntryLocked(EngineEntry& entry) {
+    if (entry.engine == nullptr) {
+        return BB_NATIVE_STATUS_INVALID_ARGUMENT;
+    }
+    if (entry.stop_confirmed) {
+        return BB_NATIVE_STATUS_OK;
+    }
+    try {
+        const int32_t status = bb_native_engine_stop(entry.engine);
+        if (status == BB_NATIVE_STATUS_OK) {
+            entry.stop_confirmed = true;
+        } else {
+            // Do not activate a new VPN generation in this process once an
+            // older engine has failed to prove it is quiescent.
+            g_shutdown_quarantined = true;
+        }
+        return status;
+    } catch (...) {
+        g_shutdown_quarantined = true;
+        return BB_NATIVE_STATUS_INTERNAL_ERROR;
+    }
 }
 
 bool validJvmConfig(jlong egress_rate_bytes_per_second,
@@ -250,6 +297,25 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeIsAvailable(
     return static_cast<jint>(bb_native_engine_is_available());
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeAbiVersion(
+    JNIEnv*, jclass) {
+    return static_cast<jint>(bb_native_engine_abi_version());
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeRequiredFeatureBits(
+    JNIEnv*, jclass) {
+    return static_cast<jlong>(bb_native_engine_required_feature_bits());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeHasQuarantinedEngine(
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_handles_mutex);
+    return g_shutdown_quarantined ? 1 : 0;
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeFeatureBits(
     JNIEnv*, jclass) {
@@ -270,36 +336,61 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeCreate(
         return 0;
     }
 
-    std::lock_guard<std::mutex> lock(g_handles_mutex);
-    g_live_handles.insert(engine);
-    return static_cast<jlong>(reinterpret_cast<uintptr_t>(engine));
+    jlong handle = 0;
+    try {
+        std::lock_guard<std::mutex> lock(g_handles_mutex);
+        handle = nextOpaqueHandleLocked();
+        if (handle != 0) {
+            const auto inserted = g_live_engines.emplace(
+                handle,
+                EngineEntry{engine, nullptr, false, false});
+            if (!inserted.second) {
+                handle = 0;
+            }
+        }
+    } catch (...) {
+        handle = 0;
+    }
+
+    if (handle == 0) {
+        // Do not expose an unregistered native allocation to Kotlin.
+        bb_native_engine_destroy(engine);
+    }
+    return handle;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" JNIEXPORT jint JNICALL
 Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeDestroy(
     JNIEnv* env, jclass, jlong handle) {
-    BbNativeEngine* const engine = pointerFromHandle(handle);
-    if (engine == nullptr) {
-        return;
-    }
-
-    SocketProtectorContext* protector_context = nullptr;
+    EngineEntry entry{};
     {
         std::lock_guard<std::mutex> lock(g_handles_mutex);
-        const auto iterator = g_live_handles.find(engine);
-        if (iterator == g_live_handles.end()) {
-            return;
+        const auto iterator = g_live_engines.find(handle);
+        if (handle == 0 || iterator == g_live_engines.end()) {
+            return BB_NATIVE_STATUS_INVALID_ARGUMENT;
         }
-        g_live_handles.erase(iterator);
-        const auto protector_iterator = g_socket_protectors.find(engine);
-        if (protector_iterator != g_socket_protectors.end()) {
-            protector_context = protector_iterator->second;
-            g_socket_protectors.erase(protector_iterator);
+        const int32_t stop_status = stopEntryLocked(iterator->second);
+        if (stop_status != BB_NATIVE_STATUS_OK) {
+            // A failed stop can still own worker/callback state. Keep this
+            // opaque handle quarantined rather than freeing it underneath a
+            // future asynchronous engine.
+            return stop_status;
         }
+        entry = iterator->second;
+        g_live_engines.erase(iterator);
     }
 
-    bb_native_engine_destroy(engine);
-    destroySocketProtector(env, protector_context);
+    try {
+        bb_native_engine_destroy(entry.engine);
+    } catch (...) {
+        // The stop contract has already made the callback quiescent, so it is
+        // safe to release bridge-owned state even if a broken implementation
+        // throws while destroying itself.
+        destroySocketProtector(env, entry.protector_context);
+        return BB_NATIVE_STATUS_INTERNAL_ERROR;
+    }
+    destroySocketProtector(env, entry.protector_context);
+    return BB_NATIVE_STATUS_OK;
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -344,17 +435,24 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeStart(
         &config,
         &protector,
     };
-    const int32_t status = withLiveEngine(handle, [&params, protector_context](BbNativeEngine* engine) {
-        if (g_socket_protectors.find(engine) != g_socket_protectors.end()) {
+    bool context_installed = false;
+    const int32_t status = withLiveEngine(handle, [&params, protector_context, &context_installed](EngineEntry& entry) {
+        if (entry.start_attempted || entry.stop_confirmed || entry.protector_context != nullptr) {
             return static_cast<int32_t>(BB_NATIVE_STATUS_INVALID_STATE);
         }
-        const int32_t start_status = bb_native_engine_start(engine, &params);
-        if (start_status == BB_NATIVE_STATUS_OK) {
-            g_socket_protectors.emplace(engine, protector_context);
+        // Install the callback context *before* calling start. A failed start
+        // may have created workers and retained the copied callback, so only
+        // stop/join is allowed to release this global Java reference.
+        entry.start_attempted = true;
+        entry.protector_context = protector_context;
+        context_installed = true;
+        try {
+            return bb_native_engine_start(entry.engine, &params);
+        } catch (...) {
+            return static_cast<int32_t>(BB_NATIVE_STATUS_INTERNAL_ERROR);
         }
-        return start_status;
     });
-    if (status != BB_NATIVE_STATUS_OK) {
+    if (!context_installed) {
         destroySocketProtector(env, protector_context);
     }
     return status;
@@ -382,17 +480,30 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeUpdateConfig(
         egress_rate_bytes_per_second, ingress_rate_bytes_per_second,
         codel_target_ms, codel_interval_ms, fair_queue_buckets,
         headroom_per_mille, burst_per_mille, flags);
-    return withLiveEngine(handle, [&config](BbNativeEngine* engine) {
-        return bb_native_engine_update_config(engine, &config);
+    return withLiveEngine(handle, [&config](EngineEntry& entry) {
+        if (!entry.start_attempted || entry.stop_confirmed) {
+            return static_cast<int32_t>(BB_NATIVE_STATUS_INVALID_STATE);
+        }
+        return bb_native_engine_update_config(entry.engine, &config);
     });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeStop(
-    JNIEnv*, jclass, jlong handle) {
-    return withLiveEngine(handle, [](BbNativeEngine* engine) {
-        return bb_native_engine_stop(engine);
+    JNIEnv* env, jclass, jlong handle) {
+    SocketProtectorContext* protector_context = nullptr;
+    const int32_t status = withLiveEngine(handle, [&protector_context](EngineEntry& entry) {
+        const int32_t stop_status = stopEntryLocked(entry);
+        if (stop_status == BB_NATIVE_STATUS_OK) {
+            protector_context = entry.protector_context;
+            entry.protector_context = nullptr;
+        }
+        return stop_status;
     });
+    if (status == BB_NATIVE_STATUS_OK) {
+        destroySocketProtector(env, protector_context);
+    }
+    return status;
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
@@ -401,8 +512,8 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeGetHealth(
     BbNativeEngineHealth health{};
     health.abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
     health.struct_size = sizeof(health);
-    const int32_t status = withLiveEngine(handle, [&health](BbNativeEngine* engine) {
-        return bb_native_engine_get_health(engine, &health);
+    const int32_t status = withLiveEngine(handle, [&health](EngineEntry& entry) {
+        return bb_native_engine_get_health(entry.engine, &health);
     });
     return newHealthArray(env, status, health);
 }
@@ -413,8 +524,8 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeGetMetrics(
     BbNativeEngineMetrics metrics{};
     metrics.abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
     metrics.struct_size = sizeof(metrics);
-    const int32_t status = withLiveEngine(handle, [&metrics](BbNativeEngine* engine) {
-        return bb_native_engine_get_metrics(engine, &metrics);
+    const int32_t status = withLiveEngine(handle, [&metrics](EngineEntry& entry) {
+        return bb_native_engine_get_metrics(entry.engine, &metrics);
     });
     return newMetricsArray(env, status, metrics);
 }
@@ -425,8 +536,8 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativePollEvent(
     BbNativeEngineEvent event{};
     event.abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
     event.struct_size = sizeof(event);
-    const int32_t status = withLiveEngine(handle, [&event](BbNativeEngine* engine) {
-        return bb_native_engine_poll_event(engine, &event);
+    const int32_t status = withLiveEngine(handle, [&event](EngineEntry& entry) {
+        return bb_native_engine_poll_event(entry.engine, &event);
     });
     return newEventArray(env, status, event);
 }
@@ -437,9 +548,9 @@ Java_com_bufferbloatshaper_nativeengine_NativeEngineBridge_nativeGetFlowMetrics(
     BbNativeFlowMetrics metrics{};
     metrics.abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
     metrics.struct_size = sizeof(metrics);
-    const int32_t status = withLiveEngine(handle, [&metrics, flow_id](BbNativeEngine* engine) {
+    const int32_t status = withLiveEngine(handle, [&metrics, flow_id](EngineEntry& entry) {
         return bb_native_engine_get_flow_metrics(
-            engine, static_cast<uint64_t>(flow_id), &metrics);
+            entry.engine, static_cast<uint64_t>(flow_id), &metrics);
     });
     return newFlowMetricsArray(env, status, metrics);
 }

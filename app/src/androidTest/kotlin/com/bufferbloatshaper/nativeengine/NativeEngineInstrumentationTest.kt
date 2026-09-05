@@ -20,6 +20,13 @@ class NativeEngineInstrumentationTest {
 
         assertFalse("The checked-in engine must fail closed until gVisor is integrated", capability.available)
         assertNotNull("An unavailable engine must explain itself", capability.detail)
+        assertEquals("The JNI/Kotlin ABI contract must remain exact", 2, capability.abiVersion)
+        assertEquals(
+            "Route activation must require IPv4 TCP, safe UDP forwarding, protected sockets, stop, health, and metrics",
+            0x3fL,
+            capability.requiredFeatureBits
+        )
         assertEquals("The unavailable stub must not advertise traffic features", 0L, capability.featureBits)
+        assertFalse("A fresh stub must not carry a failed-stop quarantine", capability.shutdownQuarantined)
     }
 }

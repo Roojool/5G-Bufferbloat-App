@@ -26,7 +26,7 @@ These behaviors are documented because they are relevant to privacy and must be 
 
 ## Local storage and logs
 
-The current source stores local shaper configuration in Android `SharedPreferences`. It retains up to 100 in-process health transitions; these disappear when the app process ends. The shipped fail-closed path logs operational state but does not log packet or endpoint data.
+The current source stores local shaper configuration in Android `SharedPreferences`. It retains up to 100 in-process health transitions; these disappear when the app process ends. If a future native engine fails to confirm its lifecycle state or exceeds the bounded native lifecycle watchdog, the app stores one generic local safety marker before ending its own process; it contains no packet, endpoint, app, or error-text data and is consumed on the next launch to explain the event. The shipped fail-closed path logs operational state but does not log packet or endpoint data.
 
 The Settings screen offers a **user-initiated** text export through Android's system share sheet. It includes device make/model, OS version, broad network-capability summary, exact local timestamps, structured runtime state, saved shaper settings, and health-transition status/generation values. It does not export free-form service/error text. It excludes traffic payloads, DNS names, IP addresses, app package names, phone/SIM identifiers, Wi-Fi names, and precise location. Nothing is sent until the user selects a share destination.
 

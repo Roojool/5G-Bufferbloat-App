@@ -89,7 +89,7 @@ fun StatsScreen(modifier: Modifier = Modifier) {
                 right = Metric("Configured cap", (metrics.ingressTargetBytesPerSec.toDouble()).toMbpsLabel(), "Mbps", Icons.Default.DataUsage, Secondary)
             )
             Spacer(modifier = Modifier.height(8.dp))
-            InfoLine("QUIC/UDP download shaping is intentionally not claimed. IPv6 is disabled until the native engine passes dual-stack tests.")
+            InfoLine("QUIC/UDP download shaping is intentionally not claimed. IPv6 bypasses the IPv4-only engine until dual-stack tests pass.")
         }
 
         Spacer(modifier = Modifier.height(16.dp))

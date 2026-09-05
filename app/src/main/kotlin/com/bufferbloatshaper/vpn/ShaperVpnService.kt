@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
+import android.os.Process
+import android.system.OsConstants
 import android.util.Log
 import com.bufferbloatshaper.model.AppRoutingMode
 import com.bufferbloatshaper.model.ShaperConfig
@@ -12,12 +14,14 @@ import com.bufferbloatshaper.model.VpnRuntimeState
 import com.bufferbloatshaper.model.VpnRuntimeStateStore
 import com.bufferbloatshaper.model.VpnRuntimeStatus
 import com.bufferbloatshaper.nativeengine.NativeEngineBridge
+import com.bufferbloatshaper.nativeengine.NativeEngineStopFailureException
 import com.bufferbloatshaper.nativeengine.SocketProtector
 import com.bufferbloatshaper.util.Notifications
 import com.bufferbloatshaper.util.Preferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
@@ -27,6 +31,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Lifecycle owner for the local Android VPN interface.
@@ -41,6 +49,14 @@ class ShaperVpnService : VpnService() {
 
     private val commandScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lifecycleMutex = Mutex()
+    // JNI calls cannot be cancelled. This deliberately runs outside Android's
+    // main looper because onDestroy() itself is a main-thread callback.
+    private val nativeLifecycleWatchdogExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "BufferbloatNativeWatchdog").apply { isDaemon = true }
+    }
+    private val emergencyTerminationRequested = AtomicBoolean(false)
+    /** Once Android starts destroying this instance, no new native work may begin. */
+    private val destroying = AtomicBoolean(false)
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var nativeSession: NativeEngineBridge.Session? = null
@@ -51,9 +67,8 @@ class ShaperVpnService : VpnService() {
     @Volatile
     private var runtimeRunning = false
 
-    /** Disabled before teardown/revocation so a late native socket cannot escape. */
-    @Volatile
-    private var socketProtectionAllowed = false
+    /** A revocation-safe narrow capability for JNI-created direct sockets. */
+    private val socketProtectionGate = VpnSocketProtectionGate()
 
     @Volatile
     var config: ShaperConfig = ShaperConfig()
@@ -68,6 +83,7 @@ class ShaperVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (destroying.get()) return START_NOT_STICKY
         when (intent?.action) {
             ACTION_START -> {
                 val requested = configFrom(intent)
@@ -109,6 +125,15 @@ class ShaperVpnService : VpnService() {
         startId: Int,
         allowStart: Boolean
     ) {
+        if (destroying.get()) return
+        if (emergencyTerminationRequested.get()) {
+            failBeforeStart(
+                requested,
+                "The app is ending after a native shutdown safety fault. Start it again before retrying.",
+                startId
+            )
+            return
+        }
         val validationErrors = requested.validationErrors()
         if (validationErrors.isNotEmpty()) {
             failBeforeStart(requested, validationErrors.joinToString(" "), startId)
@@ -130,19 +155,26 @@ class ShaperVpnService : VpnService() {
             return
         }
 
-        val capability = NativeEngineBridge.capability()
+        val capability = withNativeLifecycleWatchdog("capability check") {
+            NativeEngineBridge.capability()
+        }
         if (!capability.available) {
             // An engine can become unavailable between an active session and
             // an update. Tear down first so the UI never reports failure
             // while a stale TUN, worker, or wake lock remains alive.
-            releaseRuntimeLocked()
+            val cleanupFailure = releaseRuntimeLocked()
             config = requested.copy(isActive = false)
             VpnRuntimeStateStore.publish(
                 VpnRuntimeState(
-                    status = VpnRuntimeStatus.UNSUPPORTED,
+                    status = if (cleanupFailure == null) VpnRuntimeStatus.UNSUPPORTED else VpnRuntimeStatus.ERROR,
                     generation = runtimeGeneration,
-                    detail = "Shaping was not started. ${capability.detail}",
-                    recoverableError = "Install a build with a verified native packet engine before enabling shaping.",
+                    detail = if (cleanupFailure == null) {
+                        "Shaping was not started. ${capability.detail}"
+                    } else {
+                        "Shaping was stopped, but native cleanup needs attention."
+                    },
+                    recoverableError = cleanupFailure?.let(::cleanupFailureMessage)
+                        ?: "Install a build with a verified native packet engine before enabling shaping.",
                     config = config,
                     nativeEngineAvailable = false,
                     ipv6Supported = false
@@ -153,13 +185,21 @@ class ShaperVpnService : VpnService() {
         }
 
         if (!runtimeRunning) {
-            startLocked(requested, startId, capability)
+            withNativeLifecycleWatchdog("startup") {
+                startLocked(requested, startId, capability)
+            }
             return
         }
 
         if (requiresTunnelRestart(config, requested)) {
-            stopLocked("Restarting the local VPN to apply routing changes.", stopService = false)
-            startLocked(requested, startId, capability)
+            val stoppedCleanly = stopLocked(
+                "Restarting the local VPN to apply routing changes.",
+                stopService = false
+            )
+            if (!stoppedCleanly) return
+            withNativeLifecycleWatchdog("startup") {
+                startLocked(requested, startId, capability)
+            }
             return
         }
 
@@ -169,7 +209,9 @@ class ShaperVpnService : VpnService() {
             return
         }
 
-        NativeEngineBridge.update(session, requested).fold(
+        withNativeLifecycleWatchdog("configuration update") {
+            NativeEngineBridge.update(session, requested)
+        }.fold(
             onSuccess = {
                 config = requested.copy(isActive = true)
                 VpnRuntimeStateStore.update { state ->
@@ -191,7 +233,7 @@ class ShaperVpnService : VpnService() {
         requested: ShaperConfig,
         startId: Int,
         capability: NativeEngineBridge.Capability
-    ) {
+        ) {
         val generation = ++runtimeGeneration
         VpnRuntimeStateStore.publish(
             VpnRuntimeState(
@@ -205,12 +247,16 @@ class ShaperVpnService : VpnService() {
         )
 
         try {
+            ensureStartupIsAllowed()
             startForeground(Notifications.NOTIFICATION_ID, notifications.buildNotification())
 
             val builder = Builder()
                 .setSession("Bufferbloat Shaper")
                 .addAddress(IPV4_TUN_ADDRESS, IPV4_PREFIX_LENGTH)
                 .addRoute(IPV4_DEFAULT_ROUTE, 0)
+                // The current contract is IPv4-only. Allow IPv6 to continue
+                // on Android's ordinary network rather than black-holing it.
+                .allowFamily(OsConstants.AF_INET6)
                 // Do not set a resolver. The future native engine must forward
                 // ordinary DNS traffic to the resolver selected by the device.
                 .setMtu(requested.mtu)
@@ -222,22 +268,42 @@ class ShaperVpnService : VpnService() {
                 ?: throw IllegalStateException(
                     "Android could not establish the local VPN. Another VPN, work-profile policy, or device setting may be using it."
                 )
+            if (destroying.get() || socketProtectionGate.isRevoked()) {
+                establishedTunnel.close()
+                throw IllegalStateException("The local VPN was stopped while it was starting.")
+            }
 
             // The native ABI receives a borrowed FD and must duplicate it on a
             // successful start. Kotlin remains the sole owner of this PFD.
             // Give a future engine only a per-socket protection operation. It
             // must call this after socket() and before bind/connect/send so it
             // cannot loop direct sockets back into this VPN.
-            socketProtectionAllowed = true
+            if (!socketProtectionGate.tryEnable()) {
+                establishedTunnel.close()
+                throw IllegalStateException("The local VPN was stopped while it was starting.")
+            }
+            ensureStartupIsAllowed()
             val session = NativeEngineBridge.start(
                 establishedTunnel.fd,
                 requested,
                 SocketProtector { socketFd ->
-                    socketProtectionAllowed && protect(socketFd)
+                    socketProtectionGate.protectIfAllowed { protect(socketFd) }
                 }
             ).getOrElse { error ->
                 establishedTunnel.close()
                 throw error
+            }
+            if (destroying.get() || socketProtectionGate.isRevoked()) {
+                val failure = IllegalStateException(
+                    "The local VPN was stopped while the native engine was starting."
+                )
+                val closeFailure = withNativeLifecycleWatchdog("shutdown") {
+                    NativeEngineBridge.close(session)
+                }.exceptionOrNull()
+                establishedTunnel.close()
+                if (closeFailure is NativeEngineStopFailureException) throw closeFailure
+                closeFailure?.let(failure::addSuppressed)
+                throw failure
             }
 
             vpnInterface = establishedTunnel
@@ -251,7 +317,7 @@ class ShaperVpnService : VpnService() {
                 VpnRuntimeState(
                     status = VpnRuntimeStatus.RUNNING,
                     generation = generation,
-                    detail = "Local IPv4 shaping is active. IPv6 remains disabled until the native engine passes dual-stack tests.",
+                    detail = "Local IPv4 shaping is active. IPv6 bypasses this IPv4-only engine until dual-stack tests pass.",
                     config = config,
                     startedAtMs = System.currentTimeMillis(),
                     nativeEngineAvailable = true,
@@ -260,6 +326,9 @@ class ShaperVpnService : VpnService() {
             )
             Log.i(TAG, "Native VPN engine started (generation=$generation)")
         } catch (error: Throwable) {
+            if (error is NativeEngineStopFailureException) {
+                terminateAfterNativeLifecycleFailure(error)
+            }
             failLocked("Could not start shaping: ${error.userMessage()}", startId)
         }
     }
@@ -307,19 +376,25 @@ class ShaperVpnService : VpnService() {
             while (isActive && runtimeRunning && generation == runtimeGeneration) {
                 delay(METRICS_INTERVAL_MS)
                 val session = nativeSession ?: break
-                val health = NativeEngineBridge.health(session)
+                val health = withNativeLifecycleWatchdog("health check") {
+                    NativeEngineBridge.health(session)
+                }
                 if (health == null || health.state != NativeEngineBridge.ENGINE_STATE_RUNNING ||
                     health.lastStatus != NativeEngineBridge.STATUS_OK
                 ) {
                     failForNativeHealth(generation, health?.state, health?.lastStatus)
                     return@launch
                 }
-                val event = NativeEngineBridge.pollEvent(session)
+                val event = withNativeLifecycleWatchdog("event poll") {
+                    NativeEngineBridge.pollEvent(session)
+                }
                 if (event != null && event.eventStatus != NativeEngineBridge.STATUS_OK) {
                     failForNativeHealth(generation, health.state, event.eventStatus)
                     return@launch
                 }
-                val metrics = NativeEngineBridge.metrics(session)
+                val metrics = withNativeLifecycleWatchdog("metrics collection") {
+                    NativeEngineBridge.metrics(session)
+                }
                 if (metrics == null || metrics.state != NativeEngineBridge.ENGINE_STATE_RUNNING) {
                     consecutiveMisses++
                     if (consecutiveMisses >= MAX_METRIC_MISSES) {
@@ -400,14 +475,14 @@ class ShaperVpnService : VpnService() {
         // This method is also reached by a bad configuration update while a
         // future native session is running. Always release before publishing
         // ERROR so Android's routes and our ownership state agree.
-        releaseRuntimeLocked()
+        val cleanupFailure = releaseRuntimeLocked()
         config = requested.copy(isActive = false)
         VpnRuntimeStateStore.publish(
             VpnRuntimeState(
                 status = VpnRuntimeStatus.ERROR,
                 generation = runtimeGeneration,
                 detail = "Shaping was not started.",
-                recoverableError = reason,
+                recoverableError = appendCleanupFailure(reason, cleanupFailure),
                 config = config,
                 nativeEngineAvailable = NativeEngineBridge.capability().available,
                 ipv6Supported = false
@@ -417,13 +492,14 @@ class ShaperVpnService : VpnService() {
     }
 
     private suspend fun failLocked(reason: String, startId: Int?) {
-        releaseRuntimeLocked()
+        val cleanupFailure = releaseRuntimeLocked()
         VpnRuntimeStateStore.publish(
             VpnRuntimeState(
                 status = VpnRuntimeStatus.ERROR,
                 generation = runtimeGeneration,
-                detail = "Shaping stopped safely.",
-                recoverableError = reason,
+                detail = if (cleanupFailure == null) "Shaping stopped safely."
+                    else "Shaping stopped, but native cleanup needs attention.",
+                recoverableError = appendCleanupFailure(reason, cleanupFailure),
                 config = config.copy(isActive = false),
                 nativeEngineAvailable = NativeEngineBridge.capability().available,
                 ipv6Supported = false
@@ -433,30 +509,44 @@ class ShaperVpnService : VpnService() {
     }
 
     /** Stop and join native/Kotlin work before Kotlin closes the TUN descriptor. */
-    private suspend fun stopLocked(detail: String, stopService: Boolean) {
+    private suspend fun stopLocked(detail: String, stopService: Boolean): Boolean {
         val wasActive = runtimeRunning || nativeSession != null || vpnInterface != null
         if (wasActive) {
             VpnRuntimeStateStore.update { it.copy(status = VpnRuntimeStatus.STOPPING, detail = detail) }
         }
-        releaseRuntimeLocked()
+        val cleanupFailure = releaseRuntimeLocked()
         config = config.copy(isActive = false)
         VpnRuntimeStateStore.publish(
             VpnRuntimeState(
-                status = VpnRuntimeStatus.STOPPED,
+                status = if (cleanupFailure == null) VpnRuntimeStatus.STOPPED else VpnRuntimeStatus.ERROR,
                 generation = runtimeGeneration,
-                detail = detail,
+                detail = if (cleanupFailure == null) detail
+                    else "Shaping stopped, but native cleanup needs attention.",
+                recoverableError = cleanupFailure?.let(::cleanupFailureMessage),
                 config = config,
                 nativeEngineAvailable = NativeEngineBridge.capability().available,
                 ipv6Supported = false
             )
         )
         if (stopService) stopSelf()
+        return cleanupFailure == null
     }
 
-    private suspend fun releaseRuntimeLocked() {
+    private suspend fun releaseRuntimeLocked(): Throwable? = withContext(NonCancellable) {
+        val nativeWorkMayStillRun = nativeSession != null || metricsJob != null
+        if (nativeWorkMayStillRun) {
+            // Arm before cancelling metrics: an in-flight JNI metrics call is
+            // not cancellable and must not delay process-level containment.
+            withNativeLifecycleWatchdog("shutdown") { releaseRuntimeUnwatchedLocked() }
+        } else {
+            releaseRuntimeUnwatchedLocked()
+        }
+    }
+
+    private suspend fun releaseRuntimeUnwatchedLocked(): Throwable? {
         // Close the gate before asking native workers to stop. A correct engine
         // joins those workers before NativeEngineBridge.close returns.
-        socketProtectionAllowed = false
+        socketProtectionGate.disable()
         runtimeRunning = false
 
         val job = metricsJob
@@ -464,7 +554,10 @@ class ShaperVpnService : VpnService() {
         job?.cancelAndJoin()
 
         // Native stop is required to join native workers before the PFD closes.
-        NativeEngineBridge.close(nativeSession)
+        // If the contract is violated, JNI quarantines native state rather than
+        // freeing it; callers surface the failure while Android releases the
+        // local route to avoid leaving traffic captured indefinitely.
+        val nativeCloseFailure = NativeEngineBridge.close(nativeSession).exceptionOrNull()
         nativeSession = null
 
         try {
@@ -480,10 +573,84 @@ class ShaperVpnService : VpnService() {
         }
         wakeLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
+        if (nativeCloseFailure is NativeEngineStopFailureException) {
+            terminateAfterNativeLifecycleFailure(nativeCloseFailure)
+        }
+        return nativeCloseFailure
+    }
+
+    private fun ensureStartupIsAllowed() {
+        check(!destroying.get()) {
+            "The local VPN service is stopping."
+        }
+        check(!socketProtectionGate.isRevoked()) {
+            "VPN permission was revoked while the local VPN was starting."
+        }
+    }
+
+    private fun appendCleanupFailure(reason: String, cleanupFailure: Throwable?): String =
+        cleanupFailure?.let { "$reason ${cleanupFailureMessage(it)}" } ?: reason
+
+    private fun cleanupFailureMessage(error: Throwable): String =
+        "Native cleanup did not confirm shutdown: ${error.userMessage()}"
+
+    /**
+     * Applies an independent deadline to a JNI lifecycle operation. It is
+     * intentionally usable from onDestroy(), whose main thread can otherwise
+     * be the thread blocked inside a hung native call.
+     */
+    private suspend fun <T> withNativeLifecycleWatchdog(
+        operation: String,
+        block: suspend () -> T
+    ): T {
+        val watchdog = armNativeLifecycleWatchdog(operation)
+        return try {
+            block()
+        } finally {
+            watchdog.complete()?.let { throw it }
+        }
+    }
+
+    private fun armNativeLifecycleWatchdog(operation: String): NativeLifecycleWatchdog {
+        try {
+            return NativeLifecycleWatchdog(
+                executor = nativeLifecycleWatchdogExecutor,
+                timeoutMs = NATIVE_LIFECYCLE_WATCHDOG_MS,
+                operation = operation,
+                onTimeout = ::terminateAfterNativeLifecycleFailure
+            )
+        } catch (error: RejectedExecutionException) {
+            val failure = NativeEngineStopFailureException(
+                "The native lifecycle watchdog could not be armed.",
+                error
+            )
+            terminateAfterNativeLifecycleFailure(failure)
+            throw failure
+        }
+    }
+
+    /**
+     * A non-OK native stop may leave a duplicated TUN FD open. The bridge has
+     * already quarantined it, but only process termination closes every FD and
+     * worker owned by this app. Persist a generic marker first so the next app
+     * launch explains the deliberate safe-mode restart without storing traffic
+     * or arbitrary native error text.
+     */
+    private fun terminateAfterNativeLifecycleFailure(error: NativeEngineStopFailureException) {
+        if (!emergencyTerminationRequested.compareAndSet(false, true)) return
+        // This is lock-free: the watchdog must never wait behind a hung native
+        // socket-protection callback before it can terminate the process.
+        destroying.set(true)
+        Preferences(this).recordUnrecoverableNativeShutdown()
+        Log.e(TAG, "Native engine lifecycle did not finish; terminating this app process to release its TUN", error)
+        stopSelf()
+        Process.killProcess(Process.myPid())
     }
 
     override fun onRevoke() {
-        socketProtectionAllowed = false
+        // This synchronized latch wins over an in-progress background start;
+        // no later start step can reopen the JNI socket-protection callback.
+        socketProtectionGate.revoke()
         commandScope.launch {
             lifecycleMutex.withLock {
                 stopLocked("VPN permission was revoked by Android.", stopService = true)
@@ -493,13 +660,24 @@ class ShaperVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        runBlocking {
-            lifecycleMutex.withLock {
-                releaseRuntimeLocked()
-            }
-        }
+        // Latch first, then cancel queued commands. A command that already
+        // holds lifecycleMutex has its own independent native-operation timer;
+        // commands waiting for the mutex are cancelled and cannot start later.
+        destroying.set(true)
+        socketProtectionGate.revoke()
         commandScope.cancel()
-        super.onDestroy()
+        try {
+            runBlocking {
+                lifecycleMutex.withLock {
+                    releaseRuntimeLocked()?.let { error ->
+                        Log.e(TAG, "Native cleanup did not confirm shutdown during service destruction", error)
+                    }
+                }
+            }
+        } finally {
+            nativeLifecycleWatchdogExecutor.shutdownNow()
+            super.onDestroy()
+        }
     }
 
     private fun configFrom(intent: Intent): ShaperConfig {
@@ -547,6 +725,9 @@ class ShaperVpnService : VpnService() {
         private const val IPV4_DEFAULT_ROUTE = "0.0.0.0"
         private const val METRICS_INTERVAL_MS = 1_000L
         private const val MAX_METRIC_MISSES = 3
+        // JNI calls cannot be cancelled. A bounded process-level containment
+        // fallback is safer than leaving a duplicated TUN descriptor alive.
+        private const val NATIVE_LIFECYCLE_WATCHDOG_MS = 10_000L
 
         const val ACTION_START = "com.bufferbloatshaper.START"
         const val ACTION_STOP = "com.bufferbloatshaper.STOP"

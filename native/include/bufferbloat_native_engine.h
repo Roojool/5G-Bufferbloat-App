@@ -33,12 +33,15 @@ typedef enum BbNativeEngineFeature {
     BB_NATIVE_FEATURE_SAFE_STOP = 1ull << 2,
     BB_NATIVE_FEATURE_HEALTH_EVENTS = 1ull << 3,
     BB_NATIVE_FEATURE_FLOW_METRICS = 1ull << 4,
+    /* The IPv4 default route also captures UDP/QUIC. Forward it safely even
+     * though download-side UDP/QUIC shaping is deliberately out of scope. */
+    BB_NATIVE_FEATURE_IPV4_UDP_FORWARDING = 1ull << 5,
 } BbNativeEngineFeature;
 
 #define BB_NATIVE_REQUIRED_FEATURES \
     (BB_NATIVE_FEATURE_IPV4_TCP | BB_NATIVE_FEATURE_PROTECTED_SOCKETS | \
      BB_NATIVE_FEATURE_SAFE_STOP | BB_NATIVE_FEATURE_HEALTH_EVENTS | \
-     BB_NATIVE_FEATURE_FLOW_METRICS)
+     BB_NATIVE_FEATURE_FLOW_METRICS | BB_NATIVE_FEATURE_IPV4_UDP_FORWARDING)
 
 typedef enum BbNativeStatus {
     BB_NATIVE_STATUS_OK = 0,
@@ -120,6 +123,21 @@ typedef struct BbNativeEngineStartParams {
     const BbNativeSocketProtector* socket_protector;
 } BbNativeEngineStartParams;
 
+/*
+ * Pointer-lifetime contract for bb_native_engine_start:
+ *
+ * - The caller owns the start-parameter, configuration, and socket-protector
+ *   records. The engine must synchronously validate and copy every field it
+ *   needs before start returns, on both success and failure. It must never
+ *   retain any of those record pointers.
+ * - It may retain only the copied protect function and its opaque context;
+ *   the bridge keeps that context valid until stop returns OK.
+ * - The TUN descriptor is borrowed. On a successful start, the engine must
+ *   duplicate it before returning and must never close the caller's FD. If a
+ *   start attempt fails after duplicating it or creating workers, stop must
+ *   close/join them before it reports OK.
+ */
+
 /* A pull-based health snapshot; no callback crosses the JNI lifetime boundary. */
 typedef struct BbNativeEngineHealth {
     uint32_t abi_version;
@@ -182,6 +200,10 @@ typedef struct BbNativeEngineEvent {
  */
 BB_NATIVE_API int32_t bb_native_engine_is_available(void);
 
+/* Version and activation mask compiled into this native ABI implementation. */
+BB_NATIVE_API uint32_t bb_native_engine_abi_version(void);
+BB_NATIVE_API uint64_t bb_native_engine_required_feature_bits(void);
+
 /* A bitset of BbNativeEngineFeature values; the checked-in stub returns zero. */
 BB_NATIVE_API uint64_t bb_native_engine_feature_bits(void);
 
@@ -191,20 +213,25 @@ BB_NATIVE_API const char* bb_native_engine_build_info(void);
 BB_NATIVE_API BbNativeEngine* bb_native_engine_create(void);
 BB_NATIVE_API void bb_native_engine_destroy(BbNativeEngine* engine);
 
-/*
- * Starts the engine over a BORROWED TUN descriptor. The caller retains
- * ownership. A future successful implementation must duplicate the FD before
- * returning and must never close the caller's descriptor.
- */
+/* Starts over a BORROWED TUN descriptor; see the pointer-lifetime contract. */
 BB_NATIVE_API int32_t bb_native_engine_start(
     BbNativeEngine* engine,
     const BbNativeEngineStartParams* params);
 
+/* The engine must copy config before this call returns; it must not retain it. */
 BB_NATIVE_API int32_t bb_native_engine_update_config(
     BbNativeEngine* engine,
     const BbNativeEngineConfig* config);
 
-/* Stops native work. It is safe to call after a failed start. */
+/*
+ * Stops native work and is safe after any failed/partial start. Returning OK
+ * is a synchronous quiescence guarantee: all workers have joined, all
+ * duplicated descriptors are closed, and no callback can run again. A
+ * non-OK result means the caller must retain the engine and callback context
+ * and must not destroy either. A production engine must surface that failure
+ * through its health/event interface and must never claim SAFE_STOP until this
+ * rule is proven.
+ */
 BB_NATIVE_API int32_t bb_native_engine_stop(BbNativeEngine* engine);
 
 BB_NATIVE_API int32_t bb_native_engine_get_health(

@@ -28,13 +28,14 @@ Completion of this phase is **not** evidence that the app works as a shaper.
 1. Pin an Apache-compatible gVisor Netstack source revision, Go toolchain,
    dependency licenses/notices, and reproducible Android build process. Do not
    substitute GPL-only or proxy-dependent `tun2socks` code.
-2. ABI v2 now exposes a narrow Android `VpnService.protect(fd)` callback. A
-   real engine must honor and test it for every direct socket so it cannot loop
-   back into the VPN; it must also replace the stub's raw-pointer registry with
-   opaque lifetime-safe session tokens before being enabled.
-3. Implement IPv4 TCP forwarding first: complete TUN-facing TCP state,
-   ordering, teardown, direct protected sockets, bounded queues, health events,
-   aggregate/per-flow metrics, and serialized teardown.
+2. ABI v2 exposes a narrow Android `VpnService.protect(fd)` callback and the
+   bridge uses opaque lifetime-safe session tokens. A real engine must honor
+   and test the callback for every direct socket so it cannot loop back into
+   the VPN, including failed-start and stop/join paths.
+3. Implement safe IPv4 TCP **and UDP forwarding** first: complete TUN-facing
+   TCP state, ordering, teardown, direct protected sockets, bounded queues,
+   health events, aggregate/per-flow metrics, and serialized teardown. UDP
+   forwarding is required even though UDP/QUIC download shaping is not.
 4. Add TokenBucket, bounded fair queueing, and CoDel only where the native
    stack owns the relevant queue and retransmission semantics. Never drop bytes
    already accepted by an outer TCP socket.

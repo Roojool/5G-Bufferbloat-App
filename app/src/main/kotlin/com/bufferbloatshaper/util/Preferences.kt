@@ -74,6 +74,23 @@ class Preferences(context: Context) {
         )
     }
 
+    /**
+     * Persist only a generic, local marker before an emergency self-termination
+     * after native code fails to confirm it released a TUN. commit() is used so
+     * the next process can explain the event even if this one is killed now.
+     */
+    fun recordUnrecoverableNativeShutdown() {
+        prefs.edit()
+            .putLong(KEY_UNRECOVERABLE_NATIVE_SHUTDOWN_AT, System.currentTimeMillis())
+            .commit()
+    }
+
+    fun consumeUnrecoverableNativeShutdown(): Boolean {
+        if (!prefs.contains(KEY_UNRECOVERABLE_NATIVE_SHUTDOWN_AT)) return false
+        prefs.edit().remove(KEY_UNRECOVERABLE_NATIVE_SHUTDOWN_AT).commit()
+        return true
+    }
+
     companion object {
         private const val PREFS_NAME = "bufferbloat_shaper_prefs"
         private const val KEY_EGRESS_RATE = "egress_rate"
@@ -90,6 +107,7 @@ class Preferences(context: Context) {
         private const val KEY_APP_ROUTING_PACKAGES = "app_routing_packages"
         private const val KEY_MTU = "mtu"
         private const val KEY_TEST_PREFIX = "test_"
+        private const val KEY_UNRECOVERABLE_NATIVE_SHUTDOWN_AT = "unrecoverable_native_shutdown_at"
     }
 }
 

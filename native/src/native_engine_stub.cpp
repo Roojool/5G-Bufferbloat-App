@@ -90,6 +90,14 @@ int32_t bb_native_engine_is_available(void) {
     return 0;
 }
 
+uint32_t bb_native_engine_abi_version(void) {
+    return BB_NATIVE_ENGINE_ABI_VERSION;
+}
+
+uint64_t bb_native_engine_required_feature_bits(void) {
+    return BB_NATIVE_REQUIRED_FEATURES;
+}
+
 uint64_t bb_native_engine_feature_bits(void) {
     return 0;
 }

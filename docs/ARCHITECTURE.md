@@ -30,7 +30,7 @@ from the shipped module rather than retained as a button-triggered fallback.
 
 - The native engine is a safe stub. It deliberately returns unavailable and does not parse, retain, relay, queue, inspect, or close traffic/TUN file descriptors.
 - No TUN-facing TCP/IP stack is shipped. A future engine needs mature retransmission, reordering, congestion, and teardown behavior before it can route traffic.
-- IPv6 must not be advertised as supported until a complete native forwarding path is implemented and tested.
+- IPv6 must not be advertised as supported until a complete native forwarding path is implemented and tested. If an IPv4-only engine is ever enabled, Android's IPv6 family is explicitly allowed to bypass the VPN rather than being captured without a forwarding path.
 - DNS resolver substitution is absent because it would not preserve a user's DNS policy. A native engine must forward ordinary DNS traffic unchanged before DNS interception is enabled.
 - Calibration, ingress control, and the validation benchmark remain unverified. Runtime statistics now display only engine-reported aggregate data or an explicit unavailable value; they are not performance evidence until a real engine exists.
 
@@ -47,20 +47,24 @@ Apps -> VpnService TUN -> native TCP/IP stack -> protected direct sockets -> Int
                             control for TCP only
 ```
 
-The native engine is expected to own IPv4/IPv6 forwarding, TCP state, retransmission, ordering, teardown, and TCP receive-window accounting. Kotlin retains Android lifecycle, configuration, UI, accessibility, and local diagnostics. The repository contains a JNI ABI boundary and an intentionally unavailable native stub for `arm64-v8a`, `armeabi-v7a`, and `x86_64`; it proves only packaging, capability, and lifecycle contracts—not packet relaying. A gVisor-based implementation remains a planned architecture, not evidence of a completed integration in this prototype.
+The native engine is expected to own safe IPv4 TCP and UDP forwarding, TCP state, retransmission, ordering, teardown, and TCP receive-window accounting. IPv6 forwarding is a later, separately proven stage; until then Android must allow it to bypass the IPv4-only local route. Kotlin retains Android lifecycle, configuration, UI, accessibility, and local diagnostics. The repository contains a JNI ABI boundary and an intentionally unavailable native stub for `arm64-v8a`, `armeabi-v7a`, and `x86_64`; it proves only packaging, capability, and lifecycle contracts—not packet relaying. A gVisor-based implementation remains a planned architecture, not evidence of a completed integration in this prototype.
 
 The intended Kotlin/native contract is deliberately small:
 
 - Start with the borrowed TUN descriptor, immutable configuration, and only a
-  narrow `VpnService.protect(fd)` socket-protection callback.
+  narrow `VpnService.protect(fd)` socket-protection callback; copy the native
+  input records before returning and retain the callback only until stop joins.
 - Atomically update shaping configuration.
-- Stop and join the current engine generation.
+- Stop and join the current engine generation before Kotlin closes the TUN or
+  releases the callback; a failed stop is quarantined rather than freed.
 - Emit aggregate metrics, per-flow metrics, and health/failure events.
 
-A real engine must declare the required IPv4 TCP, protected-socket, safe-stop,
-health-event, and flow-metric feature bits before the service establishes a
-route. It must join all workers before Kotlin closes the TUN or releases the
-socket-protection callback.
+A real engine must declare the required IPv4 TCP, **safe IPv4 UDP forwarding**,
+protected-socket, safe-stop, health-event, and flow-metric feature bits before
+the service establishes a route. TCP-only shaping does not excuse dropping
+UDP/QUIC: download shaping for QUIC remains out of scope, while forwarding is a
+hard activation requirement. It must join all workers before Kotlin closes the
+TUN or releases the socket-protection callback.
 
 ## Shaping model
 
@@ -73,8 +77,8 @@ socket-protection callback.
 The release implementation must preserve these invariants:
 
 1. At most one active VPN/TUN generation owns writes and a wake lock.
-2. Stop or failure cancels and joins every native/Kotlin worker before closing the TUN descriptor.
-3. IPv6, DNS, captive-portal handling, and per-app routing are enabled only when their forwarding behavior is verified.
+2. Stop or failure cancels and joins every native/Kotlin worker before closing the TUN descriptor. An independent watchdog bounds startup, configuration updates, native health/metric calls, and shutdown before cancelling a native-touching metrics job. If a future engine violates that contract or never returns, the process-level lifecycle latch blocks further activation and the service records a generic local marker before terminating its own process to close app-owned descriptors; this last resort does not replace release evidence.
+3. IPv6, DNS, captive-portal handling, and per-app routing are enabled only when their forwarding behavior is verified. Before native IPv6 forwarding exists, Android's IPv6 family bypasses the IPv4-only route.
 4. A health failure disables or bypasses the local path with a visible, recoverable explanation; it must not silently black-hole traffic.
 5. Metrics shown in the UI and notifications come from measured runtime state, never sample or random values.
 

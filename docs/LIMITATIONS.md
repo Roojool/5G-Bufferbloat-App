@@ -11,7 +11,7 @@ These are intentional design limits, not missing toggles:
 - The app cannot force 5G, choose cellular bands, enable carrier aggregation, or select NSA/SA mode. Those decisions belong to the modem, carrier, and radio network.
 - The app is not a commercial VPN. It does not provide a remote exit location, anonymity guarantee, censorship bypass, geo-unblocking, or a project-operated relay.
 - The app does not decrypt TLS, install a local CA, bypass certificate pinning, or inspect encrypted application payloads.
-- QUIC/UDP download shaping is not a product goal. A safe local TCP receive-window mechanism does not exist for generic encrypted QUIC traffic without performing TLS interception.
+- QUIC/UDP download shaping is not a product goal. A safe local TCP receive-window mechanism does not exist for generic encrypted QUIC traffic without performing TLS interception. If an IPv4 VPN route is ever enabled, UDP/QUIC must still be forwarded safely; it may not be dropped merely because it is not shaped.
 - The app cannot eliminate latency from radio scheduling, cell congestion, server processing, or routing outside the device.
 
 ## Current prototype limitations
@@ -20,12 +20,13 @@ The following are release blockers, not caveats to hide from users:
 
 - The checked-in native engine is an intentionally unavailable stub. The service refuses to establish a TUN route rather than run an unsafe fallback, so this build does not currently shape traffic.
 - No TUN-facing TCP data plane is shipped. A future engine must provide full TCP state machinery before it can route traffic.
-- The historical IPv6/DNS prototype routed IPv6 without a working forwarding path and changed resolver behavior. IPv6 routes and DNS substitution are now absent from the service; a native implementation must preserve normal resolver behavior before DNS interception is enabled.
+- The historical IPv6/DNS prototype routed IPv6 without a working forwarding path and changed resolver behavior. IPv6 routes and DNS substitution are now absent from the service; an IPv4-only engine must explicitly let IPv6 use Android's ordinary network until dual-stack forwarding passes tests. A native implementation must preserve normal resolver behavior before DNS interception is enabled.
 - TCP download shaping is scaffolding, not a validated receive-window controller.
 - Calibration does not yet take or persist independent physical-network measurements; automatic updates remain disabled rather than feeding shaped throughput back into its own limit.
 - The statistics UI reports only aggregate metrics supplied by a native engine, configured caps, or an explicit unavailable value. It has no random/sample charts, but no live metrics exist while the stub is installed.
 - The validation screen is a visible release gate, not a benchmark. It intentionally withholds before/after scores until independent two-way load generation, verified shaper state, and local measurement persistence exist.
 - Lifecycle, handover, captive portal, screen-off, and battery behavior are not proven on physical carrier networks.
+- A future engine that fails to confirm stop/join or exceeds the bounded native lifecycle watchdog during startup or shutdown is treated as an unrecoverable safety fault: the app records a generic local marker and terminates its own process so Android closes app-owned descriptors. That containment path has not been exercised against a real engine and is not a substitute for the lifecycle release gate.
 
 ## Measurement limits
 

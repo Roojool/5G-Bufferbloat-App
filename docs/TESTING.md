@@ -24,7 +24,7 @@ They establish that the source can assemble and pass available static/unit check
 
 The debug assembly also compiles the intentionally unavailable JNI-stub boundary for `arm64-v8a`, `armeabi-v7a`, and `x86_64`. That is an ABI packaging and fail-closed capability check, not a native data-plane or traffic test.
 
-New native-engine work should add native/unit tests for packet parsing/checksums, TCP state, queue accounting, TokenBucket behavior, CoDel-style logic, fair queuing, DNS behavior, profiles, calibration calculations, and validation grading. It must also test `VpnService.protect(fd)` before every direct connect, false/throw protect paths, no callback after stop, and bounded typed-event behavior. Instrumentation tests should cover VPN lifecycle, configuration changes, health transitions, native library loading, and safe fallback behavior.
+New native-engine work should add native/unit tests for packet parsing/checksums, TCP state, queue accounting, TokenBucket behavior, CoDel-style logic, fair queuing, DNS behavior, profiles, calibration calculations, and validation grading. It must also test `VpnService.protect(fd)` before every direct connect, false/throw protect paths, no callback after stop, opaque-token stale-handle rejection, failed-start stop/join cleanup, and bounded typed-event behavior. Instrumentation tests should cover VPN lifecycle, configuration changes, health transitions, native library loading, IPv6 fall-through while only IPv4 is routed, revocation during startup, a non-OK or hung native startup/shutdown/process-containment path, and safe fallback behavior.
 
 ## Device test record
 

@@ -39,11 +39,34 @@ object NativeEngineBridge {
         val available: Boolean,
         val detail: String,
         val buildInfo: String? = null,
-        val featureBits: Long = 0L
+        val featureBits: Long = 0L,
+        val abiVersion: Int = 0,
+        val requiredFeatureBits: Long = 0L,
+        val shutdownQuarantined: Boolean = false
     )
 
     /** Opaque, non-copyable native generation handle. */
-    class Session internal constructor(@Volatile internal var handle: Long)
+    class Session internal constructor(initialHandle: Long) {
+        private val lock = Any()
+        private var handle = initialHandle
+
+        /** Serializes a bridge operation with close so a stale Session cannot
+         * race a destroy or operate on a newer engine generation. */
+        internal fun <T> withOpenHandle(operation: (Long) -> T): T? = synchronized(lock) {
+            val current = handle
+            if (current == 0L) null else operation(current)
+        }
+
+        /** Retires this Kotlin capability before teardown; native tokens are
+         * monotonic and never expose raw pointers. */
+        internal fun closeOnce(operation: (Long) -> Result<Unit>): Result<Unit> = synchronized(lock) {
+            val current = handle
+            if (current == 0L) Result.success(Unit) else {
+                handle = 0L
+                operation(current)
+            }
+        }
+    }
 
     data class Metrics(
         val status: Int,
@@ -100,22 +123,39 @@ object NativeEngineBridge {
         }
 
         return try {
-            val engineLinked = nativeIsAvailable() == 1
+            val abiVersion = nativeAbiVersion()
+            val requiredFeatureBits = nativeRequiredFeatureBits()
+            val shutdownQuarantined = nativeHasQuarantinedEngine() != 0
+            val engineLinked = nativeIsAvailable() != 0
             val featureBits = nativeFeatureBits()
-            val available = engineLinked &&
-                (featureBits and REQUIRED_TRAFFIC_FEATURES) == REQUIRED_TRAFFIC_FEATURES
+            val available = isSafeActivationContract(
+                abiVersion = abiVersion,
+                engineLinked = engineLinked,
+                featureBits = featureBits,
+                nativeRequiredFeatureBits = requiredFeatureBits,
+                shutdownQuarantined = shutdownQuarantined
+            )
             val buildInfo = nativeBuildInfo()
             Capability(
                 available = available,
                 detail = if (available) {
                     "Native engine is available."
+                } else if (shutdownQuarantined) {
+                    "A prior native engine did not confirm shutdown. Restart the app before trying again."
+                } else if (abiVersion != EXPECTED_ABI_VERSION) {
+                    "Native engine ABI $abiVersion is incompatible with expected ABI $EXPECTED_ABI_VERSION."
+                } else if (requiredFeatureBits != REQUIRED_TRAFFIC_FEATURES) {
+                    "Native engine activation requirements are incompatible with this app build."
                 } else if (engineLinked) {
                     "Native engine is missing required safe-forwarding features ($buildInfo)."
                 } else {
                     "Native engine is not available in this build ($buildInfo)."
                 },
                 buildInfo = buildInfo,
-                featureBits = featureBits
+                featureBits = featureBits,
+                abiVersion = abiVersion,
+                requiredFeatureBits = requiredFeatureBits,
+                shutdownQuarantined = shutdownQuarantined
             )
         } catch (error: Throwable) {
             Capability(
@@ -124,6 +164,24 @@ object NativeEngineBridge {
             )
         }
     }
+
+    /**
+     * Kotlin owns the activation minimum; a future native implementation may
+     * advertise additional features but cannot lower protected-socket, safe
+     * stop, health, metrics, TCP, or safe UDP forwarding requirements.
+     */
+    internal fun isSafeActivationContract(
+        abiVersion: Int,
+        engineLinked: Boolean,
+        featureBits: Long,
+        nativeRequiredFeatureBits: Long,
+        shutdownQuarantined: Boolean
+    ): Boolean =
+        !shutdownQuarantined &&
+            abiVersion == EXPECTED_ABI_VERSION &&
+            engineLinked &&
+            nativeRequiredFeatureBits == REQUIRED_TRAFFIC_FEATURES &&
+            (featureBits and REQUIRED_TRAFFIC_FEATURES) == REQUIRED_TRAFFIC_FEATURES
 
     /**
      * Starts a new engine over a borrowed TUN descriptor. A successful native
@@ -142,14 +200,47 @@ object NativeEngineBridge {
             return Result.failure(IllegalArgumentException("The VPN TUN descriptor is invalid."))
         }
 
+        val handle = try {
+            nativeCreate()
+        } catch (error: Throwable) {
+            return Result.failure(error)
+        }
+        if (handle == 0L) {
+            return Result.failure(IllegalStateException("Native engine allocation failed."))
+        }
+
         return try {
-            val handle = nativeCreate()
-            if (handle == 0L) {
-                Result.failure(IllegalStateException("Native engine allocation failed."))
+            val status = nativeStart(
+                handle = handle,
+                tunFd = borrowedTunFd,
+                egressRateBytesPerSec = config.egressRateBytesPerSec,
+                ingressRateBytesPerSec = config.ingressRateBytesPerSec,
+                codelTargetMs = config.codelTargetMs.toInt(),
+                codelIntervalMs = config.codelIntervalMs.toInt(),
+                fairQueueBuckets = config.fqBuckets,
+                headroomPermille = (config.headroomFactor * 1_000).roundToInt(),
+                burstPermille = (config.burstFraction * 1_000).roundToInt(),
+                flags = config.nativeFlags(),
+                socketProtector = socketProtector
+            )
+            if (status == STATUS_OK) {
+                Result.success(Session(handle))
             } else {
-                val status = nativeStart(
+                val startFailure = IllegalStateException(statusMessage(status))
+                Result.failure(combineStartAndCleanupFailure(startFailure, stopAndDestroy(handle).exceptionOrNull()))
+            }
+        } catch (error: Throwable) {
+            // A Java/JNI exception can arrive after native start has begun.
+            // Always request stop/join before the handle is eligible for free.
+            Result.failure(combineStartAndCleanupFailure(error, stopAndDestroy(handle).exceptionOrNull()))
+        }
+    }
+
+    fun update(session: Session, config: ShaperConfig): Result<Unit> =
+        session.withOpenHandle { handle ->
+            try {
+                val status = nativeUpdateConfig(
                     handle = handle,
-                    tunFd = borrowedTunFd,
                     egressRateBytesPerSec = config.egressRateBytesPerSec,
                     ingressRateBytesPerSec = config.ingressRateBytesPerSec,
                     codelTargetMs = config.codelTargetMs.toInt(),
@@ -157,46 +248,19 @@ object NativeEngineBridge {
                     fairQueueBuckets = config.fqBuckets,
                     headroomPermille = (config.headroomFactor * 1_000).roundToInt(),
                     burstPermille = (config.burstFraction * 1_000).roundToInt(),
-                    flags = config.nativeFlags(),
-                    socketProtector = socketProtector
+                    flags = config.nativeFlags()
                 )
-                if (status == STATUS_OK) {
-                    Result.success(Session(handle))
-                } else {
-                    nativeDestroy(handle)
-                    Result.failure(IllegalStateException(statusMessage(status)))
-                }
+                if (status == STATUS_OK) Result.success(Unit)
+                else Result.failure(IllegalStateException(statusMessage(status)))
+            } catch (error: Throwable) {
+                Result.failure(error)
             }
-        } catch (error: Throwable) {
-            Result.failure(error)
-        }
-    }
-
-    fun update(session: Session, config: ShaperConfig): Result<Unit> = try {
-        require(session.handle != 0L) { "Native engine session is already closed." }
-        val status = nativeUpdateConfig(
-            handle = session.handle,
-            egressRateBytesPerSec = config.egressRateBytesPerSec,
-            ingressRateBytesPerSec = config.ingressRateBytesPerSec,
-            codelTargetMs = config.codelTargetMs.toInt(),
-            codelIntervalMs = config.codelIntervalMs.toInt(),
-            fairQueueBuckets = config.fqBuckets,
-            headroomPermille = (config.headroomFactor * 1_000).roundToInt(),
-            burstPermille = (config.burstFraction * 1_000).roundToInt(),
-            flags = config.nativeFlags()
-        )
-        if (status == STATUS_OK) Result.success(Unit)
-        else Result.failure(IllegalStateException(statusMessage(status)))
-    } catch (error: Throwable) {
-        Result.failure(error)
-    }
+        } ?: Result.failure(IllegalStateException("Native engine session is already closed."))
 
     fun metrics(session: Session): Metrics? {
-        return try {
-            if (session.handle == 0L) {
-                null
-            } else {
-                val values = nativeGetMetrics(session.handle)
+        return session.withOpenHandle { handle ->
+            try {
+                val values = nativeGetMetrics(handle)
                 if (values.size < 12 || values[0].toInt() != STATUS_OK) {
                     null
                 } else {
@@ -215,89 +279,130 @@ object NativeEngineBridge {
                         udpPacketsPaced = values[11]
                     )
                 }
+            } catch (_: Throwable) {
+                null
             }
-        } catch (_: Throwable) {
-            null
         }
     }
 
     /** Pull a structured health snapshot; a non-OK query is treated as unavailable. */
     fun health(session: Session): Health? {
-        if (session.handle == 0L) return null
-        return try {
-            val values = nativeGetHealth(session.handle)
-            if (values.size < 6 || values[0].toInt() != STATUS_OK) null else Health(
-                status = values[0].toInt(),
-                state = values[1].toInt(),
-                lastStatus = values[2].toInt(),
-                lastEventType = values[3].toInt(),
-                detailCode = values[4].toInt(),
-                generation = values[5]
-            )
-        } catch (_: Throwable) {
-            null
+        return session.withOpenHandle { handle ->
+            try {
+                val values = nativeGetHealth(handle)
+                if (values.size < 6 || values[0].toInt() != STATUS_OK) null else Health(
+                    status = values[0].toInt(),
+                    state = values[1].toInt(),
+                    lastStatus = values[2].toInt(),
+                    lastEventType = values[3].toInt(),
+                    detailCode = values[4].toInt(),
+                    generation = values[5]
+                )
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 
     /** Returns one native event, or null when no event is queued. */
     fun pollEvent(session: Session): Event? {
-        if (session.handle == 0L) return null
-        return try {
-            val values = nativePollEvent(session.handle)
-            when {
-                values.size < 6 -> null
-                values[0].toInt() == STATUS_NO_EVENT -> null
-                values[0].toInt() != STATUS_OK -> null
-                else -> Event(
-                    status = values[0].toInt(),
-                    type = values[1].toInt(),
-                    eventStatus = values[2].toInt(),
-                    detailCode = values[3].toInt(),
-                    generation = values[4],
-                    occurredAtMs = values[5]
-                )
+        return session.withOpenHandle { handle ->
+            try {
+                val values = nativePollEvent(handle)
+                when {
+                    values.size < 6 -> null
+                    values[0].toInt() == STATUS_NO_EVENT -> null
+                    values[0].toInt() != STATUS_OK -> null
+                    else -> Event(
+                        status = values[0].toInt(),
+                        type = values[1].toInt(),
+                        eventStatus = values[2].toInt(),
+                        detailCode = values[3].toInt(),
+                        generation = values[4],
+                        occurredAtMs = values[5]
+                    )
+                }
+            } catch (_: Throwable) {
+                null
             }
-        } catch (_: Throwable) {
-            null
         }
     }
 
     fun flowMetrics(session: Session, flowId: Long): FlowMetrics? {
-        if (session.handle == 0L || flowId < 0L) return null
-        return try {
-            val values = nativeGetFlowMetrics(session.handle, flowId)
-            if (values.size < 10 || values[0].toInt() != STATUS_OK) null else FlowMetrics(
-                status = values[0].toInt(),
-                state = values[1].toInt(),
-                generation = values[2],
-                flowId = values[3],
-                bytesIn = values[4],
-                bytesOut = values[5],
-                queuedBytes = values[6],
-                aqmDrops = values[7],
-                protocol = values[8].toInt()
-            )
-        } catch (_: Throwable) {
-            null
+        if (flowId < 0L) return null
+        return session.withOpenHandle { handle ->
+            try {
+                val values = nativeGetFlowMetrics(handle, flowId)
+                if (values.size < 10 || values[0].toInt() != STATUS_OK) null else FlowMetrics(
+                    status = values[0].toInt(),
+                    state = values[1].toInt(),
+                    generation = values[2],
+                    flowId = values[3],
+                    bytesIn = values[4],
+                    bytesOut = values[5],
+                    queuedBytes = values[6],
+                    aqmDrops = values[7],
+                    protocol = values[8].toInt()
+                )
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 
-    /** Idempotently stop native work and release its opaque handle. */
-    fun close(session: Session?) {
-        val handle = session?.handle ?: return
-        if (handle == 0L) return
-        try {
+    /**
+     * Idempotently stop native work and release its opaque handle. A non-OK
+     * stop is never followed by destroy: JNI retains the token and callback
+     * context rather than risking a use-after-free in a broken future engine.
+     */
+    fun close(session: Session?): Result<Unit> {
+        if (session == null) return Result.success(Unit)
+        return session.closeOnce(::stopAndDestroy)
+    }
+
+    private fun stopAndDestroy(handle: Long): Result<Unit> {
+        val stopStatus = try {
             nativeStop(handle)
-        } catch (_: Throwable) {
-            // Kotlin still owns and closes the ParcelFileDescriptor afterwards.
-        } finally {
-            try {
-                nativeDestroy(handle)
-            } catch (_: Throwable) {
-                // A stale native handle is intentionally harmless in the JNI bridge.
-            }
-            session.handle = 0L
+        } catch (error: Throwable) {
+            return Result.failure(
+                NativeEngineStopFailureException(
+                    "Native engine did not confirm worker shutdown.",
+                    error
+                )
+            )
         }
+        if (stopStatus != STATUS_OK) {
+            return Result.failure(
+                NativeEngineStopFailureException(
+                    "Native engine did not confirm worker shutdown: ${statusMessage(stopStatus)}"
+                )
+            )
+        }
+
+        val destroyStatus = try {
+            nativeDestroy(handle)
+        } catch (error: Throwable) {
+            return Result.failure(error)
+        }
+        return if (destroyStatus == STATUS_OK) {
+            Result.success(Unit)
+        } else {
+            Result.failure(
+                IllegalStateException("Native engine cleanup failed: ${statusMessage(destroyStatus)}")
+            )
+        }
+    }
+
+    private fun combineStartAndCleanupFailure(
+        startFailure: Throwable,
+        cleanupFailure: Throwable?
+    ): Throwable {
+        if (cleanupFailure is NativeEngineStopFailureException) {
+            cleanupFailure.addSuppressed(startFailure)
+            return cleanupFailure
+        }
+        cleanupFailure?.let(startFailure::addSuppressed)
+        return startFailure
     }
 
     private fun statusMessage(status: Int): String = try {
@@ -310,10 +415,13 @@ object NativeEngineBridge {
         if (smartModeEnabled) FLAG_SMART_MODE_REQUESTED else 0
 
     @JvmStatic private external fun nativeIsAvailable(): Int
+    @JvmStatic private external fun nativeAbiVersion(): Int
+    @JvmStatic private external fun nativeRequiredFeatureBits(): Long
+    @JvmStatic private external fun nativeHasQuarantinedEngine(): Int
     @JvmStatic private external fun nativeFeatureBits(): Long
     @JvmStatic private external fun nativeBuildInfo(): String
     @JvmStatic private external fun nativeCreate(): Long
-    @JvmStatic private external fun nativeDestroy(handle: Long)
+    @JvmStatic private external fun nativeDestroy(handle: Long): Int
     @JvmStatic private external fun nativeStart(
         handle: Long,
         tunFd: Int,
@@ -347,7 +455,19 @@ object NativeEngineBridge {
 
     private const val LIBRARY_NAME = "bufferbloat_native_engine"
     private const val FLAG_SMART_MODE_REQUESTED = 1
-    private const val REQUIRED_TRAFFIC_FEATURES = 0x1FL
+    private const val EXPECTED_ABI_VERSION = 2
+    private const val REQUIRED_TRAFFIC_FEATURES = 0x3fL
 }
 
 class NativeEngineUnavailableException(message: String) : IllegalStateException(message)
+
+/**
+ * A future native engine could still own a duplicated TUN descriptor after
+ * this result, or native startup/shutdown could exceed the independent
+ * lifecycle deadline. The service treats either as a process-termination
+ * safety event, not a recoverable in-process teardown failure.
+ */
+class NativeEngineStopFailureException(
+    message: String,
+    cause: Throwable? = null
+) : IllegalStateException(message, cause)
