@@ -4,14 +4,11 @@ import android.util.Log
 import java.util.LinkedList
 
 /**
- * Passive throughput estimator — BBR-style (§5).
+ * Rolling capacity-estimate store (§5).
  *
- * Continuously estimates achievable throughput from real, ongoing traffic.
- * This is the same underlying idea BBR congestion control uses: periodically
- * probe slightly above the current estimate, back off if it doesn't hold,
- * otherwise adopt the higher estimate.
- *
- * "Cheap, always running, no user-visible test needed."
+ * Samples are submitted only by an independent physical-network probe. This
+ * class deliberately does not observe relay traffic because shaped throughput
+ * is not a valid estimate of the underlying network's capacity.
  */
 class PassiveEstimator {
 
@@ -36,56 +33,24 @@ class PassiveEstimator {
     /** Maximum samples to keep (prevents unbounded memory). */
     private val maxSamples = 500
 
-    // Accumulate bytes for measurement interval
-    private var uploadBytesAccum: Long = 0L
-    private var downloadBytesAccum: Long = 0L
-    private var lastSampleMs: Long = System.currentTimeMillis()
-
-    /** Measurement interval in milliseconds. */
-    private val sampleIntervalMs = 1000L // 1-second intervals
-
     /**
-     * Record bytes transferred. Called continuously by TcpRelay.
-     * Every [sampleIntervalMs], converts accumulated bytes into a throughput sample.
+     * Records a capacity sample obtained outside the shaper's own traffic
+     * path. Callers are responsible for proving that a sample is an
+     * independent physical-network measurement; shaped relay bytes must not
+     * be passed here because that creates a rate-collapse feedback loop.
      */
     @Synchronized
-    fun recordBytes(egressBytes: Int, ingressBytes: Int) {
-        uploadBytesAccum += egressBytes
-        downloadBytesAccum += ingressBytes
-
-        val now = System.currentTimeMillis()
-        val elapsed = now - lastSampleMs
-
-        if (elapsed >= sampleIntervalMs) {
-            // Convert to bytes/sec
-            val elapsedSec = elapsed / 1000.0
-            if (elapsedSec > 0) {
-                if (uploadBytesAccum > 0) {
-                    addSample(
-                        ThroughputSample(
-                            bytesSec = (uploadBytesAccum / elapsedSec).toLong(),
-                            timestampMs = now,
-                            direction = Direction.UPLOAD
-                        ),
-                        uploadSamples
-                    )
-                }
-                if (downloadBytesAccum > 0) {
-                    addSample(
-                        ThroughputSample(
-                            bytesSec = (downloadBytesAccum / elapsedSec).toLong(),
-                            timestampMs = now,
-                            direction = Direction.DOWNLOAD
-                        ),
-                        downloadSamples
-                    )
-                }
-            }
-
-            uploadBytesAccum = 0
-            downloadBytesAccum = 0
-            lastSampleMs = now
+    fun recordIndependentSample(
+        bytesSec: Long,
+        direction: Direction,
+        timestampMs: Long = System.currentTimeMillis()
+    ) {
+        require(bytesSec > 0L) { "Capacity samples must be positive." }
+        val samples = when (direction) {
+            Direction.UPLOAD -> uploadSamples
+            Direction.DOWNLOAD -> downloadSamples
         }
+        addSample(ThroughputSample(bytesSec, timestampMs, direction), samples)
     }
 
     private fun addSample(sample: ThroughputSample, samples: LinkedList<ThroughputSample>) {
@@ -160,9 +125,6 @@ class PassiveEstimator {
     fun clearSamples() {
         uploadSamples.clear()
         downloadSamples.clear()
-        uploadBytesAccum = 0
-        downloadBytesAccum = 0
-        lastSampleMs = System.currentTimeMillis()
         Log.d(TAG, "Passive estimator samples cleared")
     }
 

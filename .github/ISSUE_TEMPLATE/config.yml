@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Roojool/5G-Bufferbloat-App/security
+    about: Please use private reporting for security or privacy vulnerabilities.
+  - name: Source build and project limitations
+    url: https://github.com/Roojool/5G-Bufferbloat-App/tree/main/docs
+    about: Check the source-build, compatibility, and limitation documents before opening an issue.

@@ -10,6 +10,17 @@ gradle-[0-9]*/
 *.iml
 local.properties
 
+# Local environment and signing material — never publish credentials.
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
 # Build outputs
 app/build/
 app/release/
@@ -21,6 +32,12 @@ app/release/
 .cxx/
 .externalNativeBuild/
 captures/
+diagnostics/
+local-diagnostics/
+logs/
+*.pcap
+*.pcapng
+*.cap
 
 # Local diagnostic output
 build_error.log

@@ -23,7 +23,12 @@ class EgressShaper(
     private val codelIntervalMs: Long = 100,
     private val fqBuckets: Int = 1024,
     private val burstFraction: Double = 0.02,
-    private val smartModeEnabled: Boolean = false
+    private val smartModeEnabled: Boolean = false,
+    /**
+     * Loss-based AQM is safe only when the data plane owns TCP recovery.
+     * The legacy relay does not, so service code must disable it there.
+     */
+    private val enableCodel: Boolean = true
 ) {
     /** Token bucket enforcing the rate ceiling (Layer 1). */
     val tokenBucket = TokenBucket(
@@ -35,7 +40,8 @@ class EgressShaper(
     val fairQueue = FairQueue(
         numBuckets = fqBuckets,
         codelTargetMs = codelTargetMs,
-        codelIntervalMs = codelIntervalMs
+        codelIntervalMs = codelIntervalMs,
+        enableCodel = enableCodel
     )
 
     /** Flow classifier for Phase 4 adaptive mode. */

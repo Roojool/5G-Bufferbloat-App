@@ -1,0 +1,62 @@
+name: Compatibility report
+description: Submit a reproducible device/carrier/network result for the compatibility matrix.
+title: "[Compatibility]: "
+labels:
+  - compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Compatibility means evidence, not a one-time installation result. Do not include device serials, phone numbers, IMSI/IMEI, precise location, raw packet captures, or unredacted logs.
+  - type: input
+    id: commit
+    attributes:
+      label: App version and commit
+      placeholder: e.g. 1.0.0 / abc1234
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device, chipset if known, and Android version
+      placeholder: e.g. Pixel 8 (Qualcomm), Android 15
+    validations:
+      required: true
+  - type: input
+    id: network
+    attributes:
+      label: Transport and carrier (optional)
+      placeholder: e.g. 5G cellular / Airtel, or Wi-Fi
+    validations:
+      required: true
+  - type: checkboxes
+    id: traffic
+    attributes:
+      label: Tests completed
+      options:
+        - label: VPN started and stopped cleanly.
+        - label: DNS A and AAAA worked.
+        - label: Ordinary browsing and TCP traffic worked.
+        - label: A UDP/QUIC service worked.
+        - label: A sustained transfer completed without a stall or corruption.
+        - label: Network transition or screen-off behavior was exercised.
+        - label: Shaper-off/on latency and throughput were measured.
+  - type: textarea
+    id: results
+    attributes:
+      label: Results and method
+      description: Include counts, transfer size/checksum method, latency method, actual throughput, shaper state, and failures/recoveries.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Include compact, redacted command output or test logs where useful.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed secrets, personal identifiers, packet captures, and private traffic content.
+          required: true

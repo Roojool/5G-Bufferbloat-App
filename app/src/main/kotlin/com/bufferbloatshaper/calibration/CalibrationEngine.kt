@@ -5,14 +5,14 @@ import android.util.Log
 import com.bufferbloatshaper.model.CalibrationState
 import com.bufferbloatshaper.shaping.EgressShaper
 import com.bufferbloatshaper.shaping.IngressController
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
 
 /**
  * Auto-calibration engine — Phase 2, §5.
  *
- * Replaces manual rate entry with continuous, automatic rate estimation.
- * Combines passive throughput estimation (BBR-style, always running) with
- * active probing (triggered by network state changes).
+ * Holds independently measured physical-network capacity samples. It does
+ * not consume bytes observed after shaping: doing so feeds the app's own rate
+ * limit back into calibration and can progressively collapse throughput.
  *
  * Rate calculation (§5):
  *   1. Take the 20th–25th percentile of the rolling window (not the mean)
@@ -29,7 +29,6 @@ class CalibrationEngine(
     private val scope: CoroutineScope
 ) {
     val passiveEstimator = PassiveEstimator()
-    val activeProbe = ActiveProbe()
     val networkMonitor = NetworkStateMonitor(context)
 
     /** The egress shaper to update with new rate targets. */
@@ -44,12 +43,6 @@ class CalibrationEngine(
     /** Headroom factor (§5: 80–90%, default 85%). */
     var headroomFactor: Double = 0.85
 
-    /** Minimum time between active probes (prevent hammering). */
-    private val minProbeIntervalMs = 30_000L // 30 seconds
-
-    /** Last time an active probe was triggered. */
-    private var lastProbeTimeMs = 0L
-
     /** Current calibration state (exposed for UI). */
     @Volatile
     var state = CalibrationState()
@@ -60,17 +53,15 @@ class CalibrationEngine(
     var isRunning = false
         private set
 
-    private var calibrationJob: Job? = null
-
     /**
-     * Start the calibration engine.
-     * Begins passive estimation and network state monitoring.
+     * Start network-state monitoring only. Automatic probing is deliberately
+     * disabled: a verified implementation must submit independent capacity
+     * samples through [recordIndependentPhysicalProbe].
      */
     fun start() {
         if (isRunning) return
         isRunning = true
 
-        // Wire up network state change → active probe trigger
         networkMonitor.onNetworkStateChanged = { reason, networkType ->
             Log.d(TAG, "Network state changed: $reason ($networkType)")
             state = state.copy(networkType = networkType)
@@ -80,33 +71,14 @@ class CalibrationEngine(
                 passiveEstimator.clearSamples()
             }
 
-            // Trigger active probe if enough time has passed
-            triggerActiveProbe(reason)
-        }
-
-        // Wire up active probe results → passive estimator + rate update
-        activeProbe.onProbeComplete = { result ->
-            // Feed probe results into the passive estimator as data points
-            passiveEstimator.recordBytes(
-                egressBytes = (result.uploadBytesSec / 10).toInt(), // ~100ms worth
-                ingressBytes = (result.downloadBytesSec / 10).toInt()
-            )
-
-            // Recalculate rates with new data
-            recalculateRates(result.triggerReason)
         }
 
         networkMonitor.start()
-
-        // Periodic recalculation (every 10 seconds)
-        calibrationJob = scope.launch {
-            while (isActive && isRunning) {
-                recalculateRates("periodic")
-                delay(10_000)
-            }
-        }
-
-        Log.d(TAG, "Calibration engine started (percentile=$targetPercentile, headroom=$headroomFactor)")
+        state = state.copy(
+            networkType = networkMonitor.currentNetworkType,
+            lastRecalibrationReason = "Awaiting an independent physical-network probe"
+        )
+        Log.d(TAG, "Calibration monitor started; automatic probing is disabled")
     }
 
     /**
@@ -114,36 +86,35 @@ class CalibrationEngine(
      */
     fun stop() {
         isRunning = false
-        calibrationJob?.cancel()
-        calibrationJob = null
         networkMonitor.stop()
         Log.d(TAG, "Calibration engine stopped")
     }
 
     /**
-     * Record bytes from the relay (called by TcpRelay.onBytesRelayed).
+     * Accept an independently measured upload/download capacity sample.
+     * This is intentionally the only path that can influence applied rates.
      */
-    fun recordBytes(egressBytes: Int, ingressBytes: Int) {
-        passiveEstimator.recordBytes(egressBytes, ingressBytes)
-    }
-
-    /**
-     * Trigger an active probe if enough time has passed since the last one.
-     */
-    private fun triggerActiveProbe(reason: String) {
-        val now = System.currentTimeMillis()
-        if (now - lastProbeTimeMs < minProbeIntervalMs) {
-            Log.d(TAG, "Skipping active probe (too soon since last probe)")
-            return
+    fun recordIndependentPhysicalProbe(
+        uploadBytesSec: Long,
+        downloadBytesSec: Long,
+        reason: String,
+        timestampMs: Long = System.currentTimeMillis()
+    ) {
+        if (uploadBytesSec > 0L) {
+            passiveEstimator.recordIndependentSample(
+                uploadBytesSec,
+                PassiveEstimator.Direction.UPLOAD,
+                timestampMs
+            )
         }
-
-        lastProbeTimeMs = now
-        state = state.copy(activeProbeRunning = true)
-
-        scope.launch {
-            activeProbe.runProbe(reason)
-            state = state.copy(activeProbeRunning = false)
+        if (downloadBytesSec > 0L) {
+            passiveEstimator.recordIndependentSample(
+                downloadBytesSec,
+                PassiveEstimator.Direction.DOWNLOAD,
+                timestampMs
+            )
         }
+        recalculateRates(reason)
     }
 
     /**

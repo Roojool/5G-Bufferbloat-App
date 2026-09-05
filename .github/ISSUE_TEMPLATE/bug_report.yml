@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a reproducible defect in the source prototype.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping test this prototype. Do not include credentials, packet captures, phone numbers, device serials, IMEI/IMSI, precise location, or unredacted browsing/DNS history.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: State the expected behavior, the actual behavior, and whether ordinary connectivity was affected.
+      placeholder: Expected …; instead …
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include the smallest repeatable sequence and whether shaping was enabled.
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      placeholder: e.g. 1.0.0 / abc1234
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: e.g. Pixel 8, Android 15
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Network transport
+      options:
+        - Wi-Fi
+        - Cellular
+        - Wi-Fi to cellular transition
+        - Cellular to Wi-Fi transition
+        - Other / unknown
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Paste only the relevant redacted log/test output. Explain if no logs are available.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed secrets, personal identifiers, packet captures, and private traffic content.
+          required: true

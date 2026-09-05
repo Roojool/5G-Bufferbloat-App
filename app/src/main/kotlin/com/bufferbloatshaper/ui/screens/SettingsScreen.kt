@@ -3,6 +3,7 @@ package com.bufferbloatshaper.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -16,15 +17,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bufferbloatshaper.model.AppRoutingMode
+import com.bufferbloatshaper.model.AppRoutingPolicy
 import com.bufferbloatshaper.model.ShaperConfig
+import com.bufferbloatshaper.model.ShaperProfile
+import com.bufferbloatshaper.model.VpnRuntimeStateStore
+import com.bufferbloatshaper.model.VpnRuntimeStatus
 import com.bufferbloatshaper.ui.theme.*
 import com.bufferbloatshaper.util.Preferences
+import com.bufferbloatshaper.vpn.ShaperVpnService
 
 /**
  * Settings screen — manual rate entry, calibration config, smart mode toggle.
  * Includes upfront disclaimers from §10.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier
@@ -32,6 +39,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     val preferences = remember { Preferences(context) }
     var config by remember { mutableStateOf(preferences.loadConfig()) }
+    val runtime by VpnRuntimeStateStore.state.collectAsState()
+    var appPackages by remember {
+        mutableStateOf(config.appRoutingPolicy.normalizedPackages().joinToString(", "))
+    }
 
     var uploadMbps by remember {
         mutableStateOf(ShaperConfig.bytesSecToMbps(config.egressRateBytesPerSec).let {
@@ -45,8 +56,12 @@ fun SettingsScreen(
     }
 
     fun saveConfig(newConfig: ShaperConfig) {
-        config = newConfig
-        preferences.saveConfig(newConfig)
+        val safeConfig = newConfig.copy(autoCalibrationEnabled = false)
+        config = safeConfig
+        preferences.saveConfig(safeConfig)
+        if (runtime.status == VpnRuntimeStatus.RUNNING) {
+            ShaperVpnService.updateConfiguration(context)
+        }
     }
 
     Column(
@@ -64,6 +79,27 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // ---- Safe Profiles ----
+        SectionCard(title = "Safe Profile") {
+            Text(
+                "Profiles choose local headroom and queue settings. They do not change your carrier, radio, bands, or 5G mode.",
+                style = MaterialTheme.typography.bodySmall,
+                color = OnSurfaceDim
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ShaperProfile.entries.forEach { profile ->
+                    FilterChip(
+                        selected = config.profile == profile,
+                        onClick = { saveConfig(config.withProfile(profile)) },
+                        label = { Text(profile.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // ---- Manual Rate Entry ----
         SectionCard(title = "Rate Limits") {
             OutlinedTextField(
@@ -71,7 +107,10 @@ fun SettingsScreen(
                 onValueChange = { value ->
                     uploadMbps = value
                     value.toDoubleOrNull()?.let { mbps ->
-                        saveConfig(config.copy(egressRateBytesPerSec = ShaperConfig.mbpsToBytesSec(mbps)))
+                        saveConfig(config.copy(
+                            egressRateBytesPerSec = ShaperConfig.mbpsToBytesSec(mbps),
+                            profile = ShaperProfile.CUSTOM
+                        ))
                     }
                 },
                 label = { Text("Upload Limit (Mbps)") },
@@ -98,7 +137,10 @@ fun SettingsScreen(
                 onValueChange = { value ->
                     downloadMbps = value
                     value.toDoubleOrNull()?.let { mbps ->
-                        saveConfig(config.copy(ingressRateBytesPerSec = ShaperConfig.mbpsToBytesSec(mbps)))
+                        saveConfig(config.copy(
+                            ingressRateBytesPerSec = ShaperConfig.mbpsToBytesSec(mbps),
+                            profile = ShaperProfile.CUSTOM
+                        ))
                     }
                 },
                 label = { Text("Download Limit (Mbps)") },
@@ -121,24 +163,78 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ---- Auto-Calibration ----
-        SectionCard(title = "Auto-Calibration (Phase 2)") {
+        // ---- Per-app routing ----
+        SectionCard(title = "Per-app VPN Routing") {
+            Text(
+                "Optional. Use Android's supported app routing APIs to shape only selected apps or bypass selected apps. Enter package names such as com.example.app; unavailable packages block startup safely.",
+                style = MaterialTheme.typography.bodySmall,
+                color = OnSurfaceDim
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppRoutingMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = config.appRoutingPolicy.mode == mode,
+                        onClick = {
+                            saveConfig(config.copy(appRoutingPolicy = config.appRoutingPolicy.copy(mode = mode)))
+                        },
+                        label = { Text(routingModeLabel(mode)) }
+                    )
+                }
+            }
+            if (config.appRoutingPolicy.mode != AppRoutingMode.ALL_APPS) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = appPackages,
+                    onValueChange = { text ->
+                        appPackages = text
+                        saveConfig(config.copy(
+                            appRoutingPolicy = AppRoutingPolicy(
+                                mode = config.appRoutingPolicy.mode,
+                                packageNames = text.split(',', ';', '\n')
+                                    .map(String::trim)
+                                    .filter(String::isNotEmpty)
+                                    .toSet()
+                            )
+                        ))
+                    },
+                    label = { Text("Package names (comma separated)") },
+                    supportingText = { Text("Routing changes restart the local VPN when it is active.") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Secondary,
+                        unfocusedBorderColor = GlassBorder,
+                        focusedTextColor = OnSurface,
+                        unfocusedTextColor = OnSurface,
+                        focusedLabelColor = Secondary,
+                        unfocusedLabelColor = OnSurfaceDim,
+                        cursorColor = Secondary
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ---- Calibration safety ----
+        SectionCard(title = "Capacity Calibration") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Enable Auto-Calibration", style = MaterialTheme.typography.bodyMedium, color = OnSurface)
+                    Text("Automatic calibration is unavailable", style = MaterialTheme.typography.bodyMedium, color = OnSurface)
                     Text(
-                        "Automatically adjust rates based on measured network capacity",
+                        "The old passive estimator can feed already-shaped traffic back into its own rate limit. It is disabled until direct physical-network probes and per-network samples pass verification.",
                         style = MaterialTheme.typography.bodySmall,
                         color = OnSurfaceDim
                     )
                 }
                 Switch(
-                    checked = config.autoCalibrationEnabled,
-                    onCheckedChange = { saveConfig(config.copy(autoCalibrationEnabled = it)) },
+                    checked = false,
+                    onCheckedChange = null,
+                    enabled = false,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Primary,
                         checkedTrackColor = Primary.copy(alpha = 0.3f)
@@ -149,18 +245,22 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                "Headroom: ${(config.headroomFactor * 100).toInt()}%",
+                "Manual headroom: ${(config.headroomFactor * 100).toInt()}%",
                 style = MaterialTheme.typography.bodySmall,
                 color = OnSurface
             )
             Text(
-                "Percentage of estimated capacity to use",
+                "Percent of your independently measured capacity to configure",
                 style = MaterialTheme.typography.labelSmall,
                 color = OnSurfaceDim
             )
             Slider(
                 value = config.headroomFactor.toFloat(),
-                onValueChange = { saveConfig(config.copy(headroomFactor = it.toDouble())) },
+                onValueChange = { saveConfig(config.copy(
+                    headroomFactor = it.toDouble(),
+                    autoCalibrationEnabled = false,
+                    profile = ShaperProfile.CUSTOM
+                )) },
                 valueRange = 0.7f..0.95f,
                 steps = 4,
                 colors = SliderDefaults.colors(
@@ -174,7 +274,7 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // ---- Smart Mode ----
-        SectionCard(title = "Adaptive Smart Mode (Phase 4)") {
+        SectionCard(title = "Native Flow Priority") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -183,7 +283,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Enable Smart Mode", style = MaterialTheme.typography.bodyMedium, color = OnSurface)
                     Text(
-                        "Auto-detect latency-sensitive flows and prioritize them",
+                        "Stored for the verified native engine; this source build does not inspect payloads or claim flow classification is active.",
                         style = MaterialTheme.typography.bodySmall,
                         color = OnSurfaceDim
                     )
@@ -210,7 +310,10 @@ fun SettingsScreen(
             )
             Slider(
                 value = config.codelTargetMs.toFloat(),
-                onValueChange = { saveConfig(config.copy(codelTargetMs = it.toLong())) },
+                onValueChange = { saveConfig(config.copy(
+                    codelTargetMs = it.toLong(),
+                    profile = ShaperProfile.CUSTOM
+                )) },
                 valueRange = 1f..20f,
                 steps = 18,
                 colors = SliderDefaults.colors(
@@ -227,7 +330,10 @@ fun SettingsScreen(
             )
             Slider(
                 value = config.codelIntervalMs.toFloat(),
-                onValueChange = { saveConfig(config.copy(codelIntervalMs = it.toLong())) },
+                onValueChange = { saveConfig(config.copy(
+                    codelIntervalMs = it.toLong(),
+                    profile = ShaperProfile.CUSTOM
+                )) },
                 valueRange = 50f..200f,
                 steps = 14,
                 colors = SliderDefaults.colors(
@@ -249,22 +355,22 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
             DisclaimerItem(
                 icon = Icons.Default.Warning,
-                text = "Download shaping is effective for TCP traffic but has no effect on QUIC/UDP-heavy downloads. This is a fundamental protocol limitation, not a bug."
+                text = "A future native engine will target TCP ingress only. QUIC/UDP download control is intentionally out of scope."
             )
             Spacer(modifier = Modifier.height(8.dp))
             DisclaimerItem(
                 icon = Icons.Default.TrendingUp,
-                text = "The chosen shaping rate is a statistical estimate. A sudden drop in signal can still cause a brief spike before recalibration catches up."
+                text = "Set caps from an independent physical-network measurement. Automatic calibration stays disabled until direct probe evidence is available."
             )
             Spacer(modifier = Modifier.height(8.dp))
             DisclaimerItem(
                 icon = Icons.Default.Shield,
-                text = "This app uses the VPN interface purely for local traffic interception. NO traffic is routed through any remote server."
+                text = "This app is local-only: no remote proxy, telemetry server, TLS interception, or payload logging."
             )
             Spacer(modifier = Modifier.height(8.dp))
             DisclaimerItem(
                 icon = Icons.Default.BatteryStd,
-                text = "Running a local traffic relay adds some CPU overhead. Battery impact is typically in the low single-digit percentage range."
+                text = "The checked-in source fails closed while its native packet engine is unavailable; it does not capture or relay traffic in that state."
             )
         }
 
@@ -315,4 +421,10 @@ private fun DisclaimerItem(
             color = OnSurfaceDim
         )
     }
+}
+
+private fun routingModeLabel(mode: AppRoutingMode): String = when (mode) {
+    AppRoutingMode.ALL_APPS -> "All apps"
+    AppRoutingMode.ONLY_SELECTED_APPS -> "Only selected"
+    AppRoutingMode.EXCLUDE_SELECTED_APPS -> "Exclude selected"
 }

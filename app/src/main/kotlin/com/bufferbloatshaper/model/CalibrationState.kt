@@ -2,7 +2,7 @@ package com.bufferbloatshaper.model
 
 /**
  * State of the auto-calibration engine (Phase 2).
- * Tracks throughput estimation, probe history, and current targets.
+ * Tracks independently measured capacity samples and current targets.
  */
 data class CalibrationState(
     /** Current estimated upload capacity in bytes/sec. */
@@ -17,7 +17,7 @@ data class CalibrationState(
     /** Applied download shaping rate (after headroom) in bytes/sec. */
     val appliedDownloadRateBytesSec: Long = 0L,
 
-    /** Number of passive throughput samples in the rolling window. */
+    /** Number of independent capacity samples in the rolling window. */
     val sampleCount: Int = 0,
 
     /** Current percentile value being used (e.g., 25th percentile). */

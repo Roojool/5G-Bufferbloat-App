@@ -20,7 +20,8 @@ class FairQueue(
     private val numBuckets: Int = 1024,
     private val maxQueueSize: Int = 256,
     codelTargetMs: Long = 5,
-    codelIntervalMs: Long = 100
+    codelIntervalMs: Long = 100,
+    private val enableCodel: Boolean = true
 ) {
     /** A queued packet with its enqueue timestamp for sojourn time calculation. */
     data class QueuedPacket(
@@ -139,7 +140,7 @@ class FairQueue(
 
                     // Check CoDel — should we drop this packet?
                     val sojournNs = now - head.enqueueNs
-                    if (queue.codel.shouldDrop(sojournNs, now)) {
+                    if (enableCodel && queue.codel.shouldDrop(sojournNs, now)) {
                         // Drop the packet
                         queue.packets.pollFirst()
                         totalQueuedPackets--
@@ -201,7 +202,7 @@ class FairQueue(
                 if (queue.flowType.isLatencySensitive() && queue.packets.isNotEmpty()) {
                     val head = queue.packets.peekFirst() ?: continue
                     val sojournNs = now - head.enqueueNs
-                    if (!queue.codel.shouldDrop(sojournNs, now)) {
+                    if (!enableCodel || !queue.codel.shouldDrop(sojournNs, now)) {
                         queue.packets.pollFirst()
                         queue.totalBytesSent += head.packetSize
                         queue.totalPacketsSent++

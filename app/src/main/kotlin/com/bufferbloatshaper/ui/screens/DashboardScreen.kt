@@ -6,20 +6,48 @@ import android.content.Intent
 import android.net.VpnService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,37 +55,52 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bufferbloatshaper.model.ShaperConfig
+import com.bufferbloatshaper.model.VpnRuntimeStateStore
+import com.bufferbloatshaper.model.VpnRuntimeStatus
 import com.bufferbloatshaper.ui.components.SpeedGauge
 import com.bufferbloatshaper.ui.components.StatusCard
-import com.bufferbloatshaper.ui.theme.*
+import com.bufferbloatshaper.ui.theme.Background
+import com.bufferbloatshaper.ui.theme.ChartDownload
+import com.bufferbloatshaper.ui.theme.ChartUpload
+import com.bufferbloatshaper.ui.theme.Error
+import com.bufferbloatshaper.ui.theme.GlassBackground
+import com.bufferbloatshaper.ui.theme.GlassBorder
+import com.bufferbloatshaper.ui.theme.OnBackground
+import com.bufferbloatshaper.ui.theme.OnPrimary
+import com.bufferbloatshaper.ui.theme.OnSurface
+import com.bufferbloatshaper.ui.theme.OnSurfaceDim
+import com.bufferbloatshaper.ui.theme.Primary
+import com.bufferbloatshaper.ui.theme.Secondary
+import com.bufferbloatshaper.ui.theme.Success
+import com.bufferbloatshaper.ui.theme.Surface
+import com.bufferbloatshaper.ui.theme.SurfaceElevated
+import com.bufferbloatshaper.ui.theme.Warning
 import com.bufferbloatshaper.util.Preferences
 import com.bufferbloatshaper.vpn.ShaperVpnService
 
-/**
- * Main dashboard screen — the primary interface.
- * Big toggle to enable/disable shaper, speed gauges, and key metrics.
- */
+/** Main dashboard backed solely by the service's observable runtime state. */
 @Composable
-fun DashboardScreen(
-    modifier: Modifier = Modifier
-) {
+fun DashboardScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val preferences = remember { Preferences(context) }
-    var config by remember { mutableStateOf(preferences.loadConfig()) }
-    var isActive by remember { mutableStateOf(false) }
+    val runtime by VpnRuntimeStateStore.state.collectAsState()
+    val displayConfig = runtime.config ?: preferences.loadConfig()
+    val isActive = runtime.status == VpnRuntimeStatus.RUNNING
+    val isTransitioning = runtime.status == VpnRuntimeStatus.STARTING ||
+        runtime.status == VpnRuntimeStatus.STOPPING
 
-    // VPN permission launcher
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            startVpnService(context, config)
-            isActive = true
+            startVpnService(context, preferences.loadConfig())
         }
     }
+
+    val uploadMeasured = runtime.metrics.measuredEgressBytesPerSec?.let { it * 8.0 / 1_000_000 }
+    val downloadMeasured = runtime.metrics.measuredIngressBytesPerSec?.let { it * 8.0 / 1_000_000 }
 
     Column(
         modifier = modifier
@@ -66,116 +109,124 @@ fun DashboardScreen(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header
         Text(
             text = "Bufferbloat Shaper",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = OnBackground
         )
-
         Spacer(modifier = Modifier.height(8.dp))
-
         Text(
-            text = if (isActive) "Actively shaping traffic" else "Traffic shaping is off",
+            text = runtime.detail,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (isActive) Success else OnSurfaceDim
+            color = when (runtime.status) {
+                VpnRuntimeStatus.RUNNING -> Success
+                VpnRuntimeStatus.ERROR, VpnRuntimeStatus.UNSUPPORTED -> Error
+                else -> OnSurfaceDim
+            }
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        runtime.recoverableError?.let { error ->
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Error.copy(alpha = 0.12f))
+                    .border(1.dp, Error.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(Icons.Default.ErrorOutline, null, tint = Error)
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(error, style = MaterialTheme.typography.bodySmall, color = OnSurface)
+            }
+        }
 
-        // Big power toggle
+        Spacer(modifier = Modifier.height(28.dp))
         PowerToggle(
-            isActive = isActive,
+            isActive = isActive || isTransitioning,
             onClick = {
+                if (isTransitioning) return@PowerToggle
                 if (isActive) {
                     stopVpnService(context)
-                    isActive = false
                 } else {
-                    val intent = VpnService.prepare(context)
-                    if (intent != null) {
-                        vpnLauncher.launch(intent)
+                    val permissionIntent = VpnService.prepare(context)
+                    if (permissionIntent != null) {
+                        vpnLauncher.launch(permissionIntent)
                     } else {
-                        startVpnService(context, config)
-                        isActive = true
+                        startVpnService(context, preferences.loadConfig())
                     }
                 }
             }
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Speed gauges
+        Spacer(modifier = Modifier.height(28.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             SpeedGauge(
-                currentSpeedMbps = if (isActive) ShaperConfig.bytesSecToMbps(config.egressRateBytesPerSec) else 0.0,
-                maxSpeedMbps = ShaperConfig.bytesSecToMbps(config.egressRateBytesPerSec).coerceAtLeast(1.0),
-                label = "Upload",
+                currentSpeedMbps = uploadMeasured,
+                maxSpeedMbps = ShaperConfig.bytesSecToMbps(displayConfig.egressRateBytesPerSec).coerceAtLeast(1.0),
+                label = "Upload throughput",
                 gaugeColor = ChartUpload,
                 secondaryColor = Primary
             )
-
             SpeedGauge(
-                currentSpeedMbps = if (isActive) ShaperConfig.bytesSecToMbps(config.ingressRateBytesPerSec) else 0.0,
-                maxSpeedMbps = ShaperConfig.bytesSecToMbps(config.ingressRateBytesPerSec).coerceAtLeast(1.0),
-                label = "Download",
+                currentSpeedMbps = downloadMeasured,
+                maxSpeedMbps = ShaperConfig.bytesSecToMbps(displayConfig.ingressRateBytesPerSec).coerceAtLeast(1.0),
+                label = "Download throughput",
                 gaugeColor = ChartDownload,
                 secondaryColor = Secondary
             )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-
-        // Status cards grid
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatusCard(
                 title = "Active Flows",
-                value = if (isActive) "0" else "—",
+                value = if (isActive) runtime.metrics.activeFlows.toString() else "—",
                 icon = Icons.Default.SwapVert,
                 accentColor = Secondary,
                 modifier = Modifier.weight(1f)
             )
             StatusCard(
+                title = "Queue",
+                value = if (isActive) "${runtime.metrics.queuedBytes / 1024} KB" else "—",
+                icon = Icons.Default.Storage,
+                accentColor = Warning,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            StatusCard(
+                title = "AQM Drops",
+                value = if (isActive) runtime.metrics.droppedPackets.toString() else "—",
+                icon = Icons.Default.RemoveCircleOutline,
+                accentColor = Error,
+                modifier = Modifier.weight(1f)
+            )
+            StatusCard(
                 title = "Latency",
-                value = if (isActive) "—" else "—",
+                value = "—",
+                subtitle = "No native RTT sample",
                 icon = Icons.Default.Speed,
                 accentColor = Success,
                 modifier = Modifier.weight(1f)
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            StatusCard(
-                title = "Queue Depth",
-                value = if (isActive) "0" else "—",
-                icon = Icons.Default.Storage,
-                accentColor = Warning,
-                modifier = Modifier.weight(1f)
-            )
-            StatusCard(
-                title = "Drops",
-                value = if (isActive) "0" else "—",
-                icon = Icons.Default.RemoveCircleOutline,
-                accentColor = Error,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
         Spacer(modifier = Modifier.height(24.dp))
-
-        // Mode indicator
-        AnimatedVisibility(visible = isActive) {
+        AnimatedVisibility(visible = runtime.status != VpnRuntimeStatus.STOPPED) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -184,19 +235,13 @@ fun DashboardScreen(
                     .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
                     .padding(16.dp)
             ) {
-                Text(
-                    text = "Active Configuration",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = OnSurface,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text("Configuration", style = MaterialTheme.typography.titleSmall, color = OnSurface, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
-                ConfigRow("Mode", if (config.autoCalibrationEnabled) "Auto-Calibration" else "Manual")
-                ConfigRow("Egress", "%.1f Mbps".format(ShaperConfig.bytesSecToMbps(config.egressRateBytesPerSec)))
-                ConfigRow("Ingress", "%.1f Mbps".format(ShaperConfig.bytesSecToMbps(config.ingressRateBytesPerSec)))
-                ConfigRow("CoDel Target", "${config.codelTargetMs}ms")
-                ConfigRow("Smart Mode", if (config.smartModeEnabled) "On" else "Off")
-                ConfigRow("Headroom", "${(config.headroomFactor * 100).toInt()}%")
+                ConfigRow("Profile", displayConfig.profile.name.replace('_', ' ').lowercase().replaceFirstChar(Char::uppercase))
+                ConfigRow("Upload cap", "%.1f Mbps".format(ShaperConfig.bytesSecToMbps(displayConfig.egressRateBytesPerSec)))
+                ConfigRow("Download cap", "%.1f Mbps".format(ShaperConfig.bytesSecToMbps(displayConfig.ingressRateBytesPerSec)))
+                ConfigRow("App routing", displayConfig.appRoutingPolicy.mode.name.replace('_', ' ').lowercase())
+                ConfigRow("IPv6", if (runtime.ipv6Supported) "Supported" else "Disabled pending native tests")
             }
         }
 
@@ -211,7 +256,6 @@ private fun PowerToggle(isActive: Boolean, onClick: () -> Unit) {
         animationSpec = spring(dampingRatio = 0.5f),
         label = "toggle_scale"
     )
-
     val infiniteTransition = rememberInfiniteTransition(label = "glow")
     val glowAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
@@ -229,25 +273,10 @@ private fun PowerToggle(isActive: Boolean, onClick: () -> Unit) {
             .scale(scale)
             .clip(CircleShape)
             .background(
-                if (isActive) {
-                    Brush.radialGradient(
-                        colors = listOf(
-                            Primary.copy(alpha = glowAlpha),
-                            Secondary.copy(alpha = glowAlpha * 0.5f),
-                            Background
-                        )
-                    )
-                } else {
-                    Brush.radialGradient(
-                        colors = listOf(SurfaceElevated, Surface, Background)
-                    )
-                }
+                if (isActive) Brush.radialGradient(listOf(Primary.copy(alpha = glowAlpha), Secondary.copy(alpha = glowAlpha * 0.5f), Background))
+                else Brush.radialGradient(listOf(SurfaceElevated, Surface, Background))
             )
-            .border(
-                2.dp,
-                if (isActive) Primary else GlassBorder,
-                CircleShape
-            )
+            .border(2.dp, if (isActive) Primary else GlassBorder, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -262,32 +291,21 @@ private fun PowerToggle(isActive: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun ConfigRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = label, style = MaterialTheme.typography.bodySmall, color = OnSurfaceDim)
-        Text(text = value, style = MaterialTheme.typography.bodySmall, color = OnSurface, fontWeight = FontWeight.Medium)
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = OnSurfaceDim)
+        Text(value, style = MaterialTheme.typography.bodySmall, color = OnSurface, fontWeight = FontWeight.Medium)
     }
 }
 
 private fun startVpnService(context: Context, config: ShaperConfig) {
-    val intent = Intent(context, ShaperVpnService::class.java).apply {
+    Preferences(context).saveConfig(config)
+    context.startForegroundService(Intent(context, ShaperVpnService::class.java).apply {
         action = ShaperVpnService.ACTION_START
-        putExtra(ShaperVpnService.EXTRA_UPLOAD_MBPS, ShaperConfig.bytesSecToMbps(config.egressRateBytesPerSec))
-        putExtra(ShaperVpnService.EXTRA_DOWNLOAD_MBPS, ShaperConfig.bytesSecToMbps(config.ingressRateBytesPerSec))
-        putExtra(ShaperVpnService.EXTRA_AUTO_CALIBRATE, config.autoCalibrationEnabled)
-        putExtra(ShaperVpnService.EXTRA_SMART_MODE, config.smartModeEnabled)
-        putExtra(ShaperVpnService.EXTRA_HEADROOM, config.headroomFactor)
-    }
-    context.startForegroundService(intent)
+    })
 }
 
 private fun stopVpnService(context: Context) {
-    val intent = Intent(context, ShaperVpnService::class.java).apply {
+    context.startService(Intent(context, ShaperVpnService::class.java).apply {
         action = ShaperVpnService.ACTION_STOP
-    }
-    context.startService(intent)
+    })
 }

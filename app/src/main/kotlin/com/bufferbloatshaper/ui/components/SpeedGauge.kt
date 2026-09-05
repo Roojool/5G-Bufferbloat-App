@@ -21,18 +21,19 @@ import com.bufferbloatshaper.ui.theme.*
 
 /**
  * Animated speed gauge component with gradient arc.
- * Shows current throughput as a percentage of the configured limit.
+ * Shows measured throughput as a percentage of the configured limit. A null
+ * sample is rendered as an em dash rather than a made-up zero.
  */
 @Composable
 fun SpeedGauge(
-    currentSpeedMbps: Double,
+    currentSpeedMbps: Double?,
     maxSpeedMbps: Double,
     label: String,
     modifier: Modifier = Modifier,
     gaugeColor: Color = Primary,
     secondaryColor: Color = Secondary
 ) {
-    val ratio = if (maxSpeedMbps > 0) {
+    val ratio = if (currentSpeedMbps != null && maxSpeedMbps > 0) {
         (currentSpeedMbps / maxSpeedMbps).coerceIn(0.0, 1.0)
     } else 0.0
 
@@ -88,7 +89,7 @@ fun SpeedGauge(
                     topLeft = topLeft,
                     size = arcSize,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                    alpha = if (currentSpeedMbps > 0) pulseAlpha else 1f
+                    alpha = if ((currentSpeedMbps ?: 0.0) > 0) pulseAlpha else 1f
                 )
             }
         }
@@ -96,7 +97,7 @@ fun SpeedGauge(
         // Center text
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "%.1f".format(currentSpeedMbps),
+                text = currentSpeedMbps?.let { "%.1f".format(it) } ?: "—",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = OnBackground
@@ -110,7 +111,7 @@ fun SpeedGauge(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
-                color = if (currentSpeedMbps > 0) Secondary else OnSurfaceDim
+                color = if ((currentSpeedMbps ?: 0.0) > 0) Secondary else OnSurfaceDim
             )
         }
     }

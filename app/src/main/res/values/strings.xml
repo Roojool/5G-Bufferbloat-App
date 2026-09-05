@@ -47,8 +47,7 @@
     <string name="vpn_channel_name">Traffic Shaper</string>
     <string name="vpn_channel_desc">Shows shaper status while active</string>
     <string name="notification_shaping_active">Shaping active — %1$s↑ %2$s↓</string>
-    <string name="action_pause">Pause</string>
-    <string name="action_resume">Resume</string>
+    <string name="action_stop">Stop shaping</string>
 
     <!-- Disclaimers (§10) -->
     <string name="disclaimer_title">What This App Does &amp; Doesn\'t Do</string>

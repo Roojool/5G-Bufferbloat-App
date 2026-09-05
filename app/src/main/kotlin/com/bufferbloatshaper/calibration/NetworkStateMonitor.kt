@@ -1,6 +1,9 @@
 package com.bufferbloatshaper.calibration
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -18,9 +21,9 @@ import android.util.Log
  *   - Network type switches (WiFi ↔ cellular)
  *   - Signal strength changes
  *
- * These events trigger ActiveProbe measurements rather than relying on a
- * fixed timer, exactly mirroring the workflow from §5: "triggered by the
- * actual signal that conditions changed instead of a clock."
+ * These events invalidate a future network-specific calibration profile. They
+ * do not automatically start a traffic probe: only independently measured
+ * physical-network samples may change a shaping rate.
  */
 class NetworkStateMonitor(private val context: Context) {
 
@@ -147,7 +150,15 @@ class NetworkStateMonitor(private val context: Context) {
      * Detect the specific cellular RAT (Radio Access Technology).
      */
     @Suppress("DEPRECATION")
+    @SuppressLint("MissingPermission") // Guarded immediately below; no telephony read without grant.
     private fun detectCellularType(): String {
+        // RAT detail is optional. Do not attempt a protected telephony read
+        // unless a future, explicit user flow has granted the permission.
+        if (context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return "Cellular"
+        }
         return try {
             when (telephonyManager?.dataNetworkType) {
                 TelephonyManager.NETWORK_TYPE_NR -> "5G NR"

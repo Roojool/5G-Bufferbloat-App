@@ -2,7 +2,10 @@ package com.bufferbloatshaper.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.bufferbloatshaper.model.AppRoutingMode
+import com.bufferbloatshaper.model.AppRoutingPolicy
 import com.bufferbloatshaper.model.ShaperConfig
+import com.bufferbloatshaper.model.ShaperProfile
 
 /**
  * Thin wrapper around SharedPreferences for persisting shaper configuration.
@@ -23,6 +26,10 @@ class Preferences(context: Context) {
             putLong(KEY_CODEL_INTERVAL, config.codelIntervalMs)
             putInt(KEY_FQ_BUCKETS, config.fqBuckets)
             putFloat(KEY_BURST_FRACTION, config.burstFraction.toFloat())
+            putString(KEY_PROFILE, config.profile.name)
+            putString(KEY_APP_ROUTING_MODE, config.appRoutingPolicy.mode.name)
+            putStringSet(KEY_APP_ROUTING_PACKAGES, config.appRoutingPolicy.normalizedPackages())
+            putInt(KEY_MTU, config.mtu)
             apply()
         }
     }
@@ -37,7 +44,13 @@ class Preferences(context: Context) {
             codelTargetMs = prefs.getLong(KEY_CODEL_TARGET, 5L),
             codelIntervalMs = prefs.getLong(KEY_CODEL_INTERVAL, 100L),
             fqBuckets = prefs.getInt(KEY_FQ_BUCKETS, 1024),
-            burstFraction = prefs.getFloat(KEY_BURST_FRACTION, 0.02f).toDouble()
+            burstFraction = prefs.getFloat(KEY_BURST_FRACTION, 0.02f).toDouble(),
+            profile = prefs.getEnum(KEY_PROFILE, ShaperProfile.BALANCED),
+            appRoutingPolicy = AppRoutingPolicy(
+                mode = prefs.getEnum(KEY_APP_ROUTING_MODE, AppRoutingMode.ALL_APPS),
+                packageNames = prefs.getStringSet(KEY_APP_ROUTING_PACKAGES, emptySet()).orEmpty()
+            ),
+            mtu = prefs.getInt(KEY_MTU, ShaperConfig.DEFAULT_MTU)
         )
     }
 
@@ -72,6 +85,15 @@ class Preferences(context: Context) {
         private const val KEY_CODEL_INTERVAL = "codel_interval"
         private const val KEY_FQ_BUCKETS = "fq_buckets"
         private const val KEY_BURST_FRACTION = "burst_fraction"
+        private const val KEY_PROFILE = "profile"
+        private const val KEY_APP_ROUTING_MODE = "app_routing_mode"
+        private const val KEY_APP_ROUTING_PACKAGES = "app_routing_packages"
+        private const val KEY_MTU = "mtu"
         private const val KEY_TEST_PREFIX = "test_"
     }
 }
+
+private inline fun <reified T : Enum<T>> SharedPreferences.getEnum(key: String, fallback: T): T =
+    getString(key, fallback.name)?.let { stored ->
+        enumValues<T>().firstOrNull { it.name == stored }
+    } ?: fallback

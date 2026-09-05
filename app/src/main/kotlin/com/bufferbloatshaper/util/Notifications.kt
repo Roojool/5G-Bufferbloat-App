@@ -6,16 +6,18 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.bufferbloatshaper.MainActivity
 import com.bufferbloatshaper.R
+import com.bufferbloatshaper.vpn.ShaperVpnService
 
 /**
  * Notification management for the foreground VPN service (Phase 5).
  *
  * Shows persistent notification with live stats while shaping is active,
- * plus quick-action buttons for pause/resume.
+ * plus a reliable stop action. The app deliberately does not advertise a
+ * pause/resume state until the native engine can provide one without leaving
+ * traffic in an ambiguous routing state.
  */
 class Notifications(private val context: Context) {
 
@@ -23,8 +25,6 @@ class Notifications(private val context: Context) {
         const val CHANNEL_ID = "bufferbloat_shaper_vpn"
         const val NOTIFICATION_ID = 1001
 
-        const val ACTION_PAUSE = "com.bufferbloatshaper.ACTION_PAUSE"
-        const val ACTION_RESUME = "com.bufferbloatshaper.ACTION_RESUME"
     }
 
     /**
@@ -51,13 +51,11 @@ class Notifications(private val context: Context) {
      *
      * @param uploadRate Current upload rate as human-readable string (e.g., "12.5 Mbps").
      * @param downloadRate Current download rate as human-readable string.
-     * @param isPaused Whether shaping is currently paused.
      * @return Notification to use with startForeground().
      */
     fun buildNotification(
         uploadRate: String = "—",
-        downloadRate: String = "—",
-        isPaused: Boolean = false
+        downloadRate: String = "—"
     ): Notification {
         // Tap notification → open main activity
         val openIntent = PendingIntent.getActivity(
@@ -69,32 +67,25 @@ class Notifications(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Pause/Resume action button
-        val actionIntent = PendingIntent.getBroadcast(
+        // A service PendingIntent reaches the same serialized lifecycle path
+        // as the dashboard. There is no orphan broadcast receiver.
+        val actionIntent = PendingIntent.getService(
             context,
             1,
-            Intent(if (isPaused) ACTION_RESUME else ACTION_PAUSE),
+            Intent(context, ShaperVpnService::class.java).apply {
+                action = ShaperVpnService.ACTION_STOP
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val actionLabel = if (isPaused) {
-            context.getString(R.string.action_resume)
-        } else {
-            context.getString(R.string.action_pause)
-        }
-
-        val contentText = if (isPaused) {
-            "Shaping paused"
-        } else {
-            context.getString(R.string.notification_shaping_active, uploadRate, downloadRate)
-        }
+        val contentText = context.getString(R.string.notification_shaping_active, uploadRate, downloadRate)
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_vpn_key)
             .setContentTitle(context.getString(R.string.app_name))
             .setContentText(contentText)
             .setContentIntent(openIntent)
-            .addAction(0, actionLabel, actionIntent)
+            .addAction(0, context.getString(R.string.action_stop), actionIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -106,9 +97,9 @@ class Notifications(private val context: Context) {
     /**
      * Update the existing notification with new stats.
      */
-    fun updateNotification(uploadRate: String, downloadRate: String, isPaused: Boolean = false) {
+    fun updateNotification(uploadRate: String, downloadRate: String) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
                 as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification(uploadRate, downloadRate, isPaused))
+        manager.notify(NOTIFICATION_ID, buildNotification(uploadRate, downloadRate))
     }
 }
