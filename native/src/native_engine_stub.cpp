@@ -14,7 +14,8 @@ uint64_t monotonicMillis() {
 }
 
 bool isValidConfig(const BbNativeEngineConfig* config) {
-    if (config == nullptr || config->abi_version != BB_NATIVE_ENGINE_ABI_VERSION) {
+    if (config == nullptr || config->abi_version != BB_NATIVE_ENGINE_ABI_VERSION ||
+        config->struct_size < sizeof(BbNativeEngineConfig)) {
         return false;
     }
 
@@ -23,6 +24,9 @@ bool isValidConfig(const BbNativeEngineConfig* config) {
         config->codel_target_ms == 0 ||
         config->codel_interval_ms == 0 ||
         config->fair_queue_quantum_bytes == 0 ||
+        config->fair_queue_buckets == 0 ||
+        config->headroom_per_mille == 0 || config->headroom_per_mille > 1000 ||
+        config->burst_per_mille == 0 || config->burst_per_mille > 1000 ||
         config->reserved != 0) {
         return false;
     }
@@ -30,25 +34,42 @@ bool isValidConfig(const BbNativeEngineConfig* config) {
     return true;
 }
 
+bool isValidStartParams(const BbNativeEngineStartParams* params) {
+    return params != nullptr &&
+        params->abi_version == BB_NATIVE_ENGINE_ABI_VERSION &&
+        params->struct_size >= sizeof(BbNativeEngineStartParams) &&
+        params->tun_fd >= 0 &&
+        params->reserved == 0 &&
+        isValidConfig(params->config) &&
+        params->socket_protector != nullptr &&
+        params->socket_protector->abi_version == BB_NATIVE_ENGINE_ABI_VERSION &&
+        params->socket_protector->struct_size >= sizeof(BbNativeSocketProtector) &&
+        params->socket_protector->protect_socket != nullptr;
+}
+
 void initializeHealth(BbNativeEngineHealth* health) {
     std::memset(health, 0, sizeof(*health));
     health->abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
+    health->struct_size = sizeof(*health);
 }
 
 void initializeMetrics(BbNativeEngineMetrics* metrics) {
     std::memset(metrics, 0, sizeof(*metrics));
     metrics->abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
+    metrics->struct_size = sizeof(*metrics);
 }
 
 void initializeFlowMetrics(BbNativeFlowMetrics* metrics, uint64_t flow_id) {
     std::memset(metrics, 0, sizeof(*metrics));
     metrics->abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
+    metrics->struct_size = sizeof(*metrics);
     metrics->flow_id = flow_id;
 }
 
 void initializeEvent(BbNativeEngineEvent* event) {
     std::memset(event, 0, sizeof(*event));
     event->abi_version = BB_NATIVE_ENGINE_ABI_VERSION;
+    event->struct_size = sizeof(*event);
 }
 
 }  // namespace
@@ -69,6 +90,10 @@ int32_t bb_native_engine_is_available(void) {
     return 0;
 }
 
+uint64_t bb_native_engine_feature_bits(void) {
+    return 0;
+}
+
 const char* bb_native_engine_build_info(void) {
     return "stub-unavailable; no gVisor or tun2socks packet engine is linked";
 }
@@ -83,14 +108,15 @@ void bb_native_engine_destroy(BbNativeEngine* engine) {
 
 int32_t bb_native_engine_start(
     BbNativeEngine* engine,
-    int tun_fd,
-    const BbNativeEngineConfig* config) {
-    if (engine == nullptr || tun_fd < 0 || !isValidConfig(config)) {
+    const BbNativeEngineStartParams* params) {
+    if (engine == nullptr || !isValidStartParams(params)) {
         return BB_NATIVE_STATUS_INVALID_ARGUMENT;
     }
 
     std::lock_guard<std::mutex> lock(engine->mutex);
-    // Do not read, duplicate, retain, or close tun_fd in this stub.
+    // Do not read, duplicate, retain, or close the TUN FD or callback in this
+    // stub. A real engine must retain only a copied callback contract after it
+    // has duplicated the borrowed TUN FD.
     engine->state = BB_NATIVE_ENGINE_STATE_UNAVAILABLE;
     engine->last_status = BB_NATIVE_STATUS_UNAVAILABLE;
     engine->last_event = BB_NATIVE_ENGINE_EVENT_ENGINE_UNAVAILABLE;

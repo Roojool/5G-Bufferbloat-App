@@ -1,5 +1,13 @@
 # Mobile Bufferbloat Shaper — Technical & Product Plan
 
+> **Historical planning record — not the current implementation contract.** This
+> document predates the fail-closed native-engine decision. Read
+> [the current roadmap](docs/ROADMAP.md), [limitations](docs/LIMITATIONS.md),
+> and [architecture](docs/ARCHITECTURE.md) for the source that is actually
+> shipped. In particular, its historical `tun2socks` references are not an
+> approved dependency: this project must not adopt GPL-only or proxy-dependent
+> code for an Apache-2.0, local-only release.
+
 ## 0. The honest starting point
 
 Rate-limiter apps already exist (Bandwidth Ruler, NetThrottle, and others). What none of them appear to do is real active queue management — they enforce a ceiling and then either queue or drop overflow with no real strategy, which is why "cap it and hope" only gets you a partial fix. The actual gap in this market, and the real value proposition for "groundbreaking," is three specific things nobody in the simple rate-limiter category does well:

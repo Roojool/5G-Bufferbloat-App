@@ -47,7 +47,7 @@ class TokenBucket(
     }
 
     /**
-     * Update the rate dynamically (used by CalibrationEngine).
+     * Update the rate dynamically for algorithm-reference tests.
      * Recalculates burst capacity proportionally.
      */
     @Synchronized

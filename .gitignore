@@ -1,5 +1,6 @@
 # Gradle
 .gradle/
+.kotlin/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 # Local Gradle distributions are reproducible via the wrapper and must not be versioned.

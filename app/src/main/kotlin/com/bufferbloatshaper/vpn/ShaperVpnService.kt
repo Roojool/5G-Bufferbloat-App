@@ -1,7 +1,6 @@
 package com.bufferbloatshaper.vpn
 
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
@@ -13,6 +12,7 @@ import com.bufferbloatshaper.model.VpnRuntimeState
 import com.bufferbloatshaper.model.VpnRuntimeStateStore
 import com.bufferbloatshaper.model.VpnRuntimeStatus
 import com.bufferbloatshaper.nativeengine.NativeEngineBridge
+import com.bufferbloatshaper.nativeengine.SocketProtector
 import com.bufferbloatshaper.util.Notifications
 import com.bufferbloatshaper.util.Preferences
 import kotlinx.coroutines.CoroutineScope
@@ -31,12 +31,11 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Lifecycle owner for the local Android VPN interface.
  *
- * Production traffic is intentionally routed only through the native engine
- * contract. The historical Kotlin TCP relay remains in the source tree for
- * migration/reference tests but is never instantiated here: it cannot safely
- * own TCP recovery, ordering, or receive-window accounting. If the native
- * engine is absent or unhealthy, this service fails before establishing a TUN
- * route so the device continues using its ordinary network.
+ * Production traffic can be routed only through a verified native engine
+ * contract. The unsafe hand-written Kotlin relay was removed rather than kept
+ * as an activation fallback. If the native engine is absent or unhealthy,
+ * this service fails before establishing a TUN route so the device continues
+ * using its ordinary network.
  */
 class ShaperVpnService : VpnService() {
 
@@ -51,6 +50,10 @@ class ShaperVpnService : VpnService() {
 
     @Volatile
     private var runtimeRunning = false
+
+    /** Disabled before teardown/revocation so a late native socket cannot escape. */
+    @Volatile
+    private var socketProtectionAllowed = false
 
     @Volatile
     var config: ShaperConfig = ShaperConfig()
@@ -129,7 +132,10 @@ class ShaperVpnService : VpnService() {
 
         val capability = NativeEngineBridge.capability()
         if (!capability.available) {
-            runtimeRunning = false
+            // An engine can become unavailable between an active session and
+            // an update. Tear down first so the UI never reports failure
+            // while a stale TUN, worker, or wake lock remains alive.
+            releaseRuntimeLocked()
             config = requested.copy(isActive = false)
             VpnRuntimeStateStore.publish(
                 VpnRuntimeState(
@@ -199,7 +205,6 @@ class ShaperVpnService : VpnService() {
         )
 
         try {
-            validateRoutingPackages(requested)
             startForeground(Notifications.NOTIFICATION_ID, notifications.buildNotification())
 
             val builder = Builder()
@@ -220,7 +225,17 @@ class ShaperVpnService : VpnService() {
 
             // The native ABI receives a borrowed FD and must duplicate it on a
             // successful start. Kotlin remains the sole owner of this PFD.
-            val session = NativeEngineBridge.start(establishedTunnel.fd, requested).getOrElse { error ->
+            // Give a future engine only a per-socket protection operation. It
+            // must call this after socket() and before bind/connect/send so it
+            // cannot loop direct sockets back into this VPN.
+            socketProtectionAllowed = true
+            val session = NativeEngineBridge.start(
+                establishedTunnel.fd,
+                requested,
+                SocketProtector { socketFd ->
+                    socketProtectionAllowed && protect(socketFd)
+                }
+            ).getOrElse { error ->
                 establishedTunnel.close()
                 throw error
             }
@@ -249,27 +264,21 @@ class ShaperVpnService : VpnService() {
         }
     }
 
-    /** Android VPN builder rejects absent packages, so detect them before routes exist. */
-    private fun validateRoutingPackages(requested: ShaperConfig) {
-        val policy = requested.appRoutingPolicy
-        if (policy.mode == AppRoutingMode.ALL_APPS) return
-
-        policy.normalizedPackages().forEach { packageName ->
-            try {
-                @Suppress("DEPRECATION")
-                packageManager.getApplicationInfo(packageName, 0)
-            } catch (_: PackageManager.NameNotFoundException) {
-                throw IllegalArgumentException("The selected app '$packageName' is not installed.")
-            }
-        }
-    }
-
     private fun applyAppRouting(builder: Builder, requested: ShaperConfig) {
         val packages = requested.appRoutingPolicy.normalizedPackages()
-        when (requested.appRoutingPolicy.mode) {
-            AppRoutingMode.ALL_APPS -> Unit
-            AppRoutingMode.ONLY_SELECTED_APPS -> packages.forEach(builder::addAllowedApplication)
-            AppRoutingMode.EXCLUDE_SELECTED_APPS -> packages.forEach(builder::addDisallowedApplication)
+        try {
+            when (requested.appRoutingPolicy.mode) {
+                AppRoutingMode.ALL_APPS -> Unit
+                AppRoutingMode.ONLY_SELECTED_APPS -> packages.forEach(builder::addAllowedApplication)
+                AppRoutingMode.EXCLUDE_SELECTED_APPS -> packages.forEach(builder::addDisallowedApplication)
+            }
+        } catch (_: Exception) {
+            // Do not pre-query installed packages: package visibility rules can
+            // make a valid app look absent. Builder validation occurs before
+            // establish(), so normal traffic remains untouched on failure.
+            throw IllegalArgumentException(
+                "One selected app cannot be routed on this Android build. Review the package name and app-routing mode."
+            )
         }
     }
 
@@ -298,8 +307,20 @@ class ShaperVpnService : VpnService() {
             while (isActive && runtimeRunning && generation == runtimeGeneration) {
                 delay(METRICS_INTERVAL_MS)
                 val session = nativeSession ?: break
+                val health = NativeEngineBridge.health(session)
+                if (health == null || health.state != NativeEngineBridge.ENGINE_STATE_RUNNING ||
+                    health.lastStatus != NativeEngineBridge.STATUS_OK
+                ) {
+                    failForNativeHealth(generation, health?.state, health?.lastStatus)
+                    return@launch
+                }
+                val event = NativeEngineBridge.pollEvent(session)
+                if (event != null && event.eventStatus != NativeEngineBridge.STATUS_OK) {
+                    failForNativeHealth(generation, health.state, event.eventStatus)
+                    return@launch
+                }
                 val metrics = NativeEngineBridge.metrics(session)
-                if (metrics == null) {
+                if (metrics == null || metrics.state != NativeEngineBridge.ENGINE_STATE_RUNNING) {
                     consecutiveMisses++
                     if (consecutiveMisses >= MAX_METRIC_MISSES) {
                         commandScope.launch {
@@ -316,7 +337,7 @@ class ShaperVpnService : VpnService() {
                 consecutiveMisses = 0
                 val nowMs = System.currentTimeMillis()
                 val prior = previousMetrics
-                val elapsedMs = nowMs - previousSampleAtMs
+                val elapsedMs = metrics.sampledAtMs - previousSampleAtMs
                 val measuredEgress = if (prior != null && elapsedMs > 0) {
                     ((metrics.bytesIn - prior.bytesIn).coerceAtLeast(0) * 1_000.0) / elapsedMs
                 } else {
@@ -328,7 +349,7 @@ class ShaperVpnService : VpnService() {
                     null
                 }
                 previousMetrics = metrics
-                previousSampleAtMs = nowMs
+                previousSampleAtMs = metrics.sampledAtMs
                 VpnRuntimeStateStore.update { state ->
                     if (state.generation != generation) state else state.copy(
                         metrics = VpnRuntimeMetrics(
@@ -351,15 +372,35 @@ class ShaperVpnService : VpnService() {
         }
     }
 
+    private fun failForNativeHealth(generation: Long, state: Int?, status: Int?) {
+        commandScope.launch {
+            lifecycleMutex.withLock {
+                if (runtimeRunning && generation == runtimeGeneration) {
+                    failLocked(
+                        "The native engine reported an unhealthy state (state=${state ?: "unavailable"}, status=${status ?: "unavailable"}).",
+                        null
+                    )
+                }
+            }
+        }
+    }
+
     private fun updateNotification() {
         val state = VpnRuntimeStateStore.state.value
-        val upload = "%.1f Mbps".format(state.metrics.egressRateBytesPerSec * 8 / 1_000_000)
-        val download = "%.1f Mbps".format(state.metrics.ingressTargetBytesPerSec * 8.0 / 1_000_000)
+        val upload = state.metrics.measuredEgressBytesPerSec?.let {
+            "%.1f Mbps".format(it * 8 / 1_000_000)
+        } ?: "—"
+        val download = state.metrics.measuredIngressBytesPerSec?.let {
+            "%.1f Mbps".format(it * 8 / 1_000_000)
+        } ?: "—"
         notifications.updateNotification(upload, download)
     }
 
     private suspend fun failBeforeStart(requested: ShaperConfig, reason: String, startId: Int) {
-        runtimeRunning = false
+        // This method is also reached by a bad configuration update while a
+        // future native session is running. Always release before publishing
+        // ERROR so Android's routes and our ownership state agree.
+        releaseRuntimeLocked()
         config = requested.copy(isActive = false)
         VpnRuntimeStateStore.publish(
             VpnRuntimeState(
@@ -413,6 +454,9 @@ class ShaperVpnService : VpnService() {
     }
 
     private suspend fun releaseRuntimeLocked() {
+        // Close the gate before asking native workers to stop. A correct engine
+        // joins those workers before NativeEngineBridge.close returns.
+        socketProtectionAllowed = false
         runtimeRunning = false
 
         val job = metricsJob
@@ -439,6 +483,7 @@ class ShaperVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        socketProtectionAllowed = false
         commandScope.launch {
             lifecycleMutex.withLock {
                 stopLocked("VPN permission was revoked by Android.", stopService = true)

@@ -1,5 +1,9 @@
 package com.bufferbloatshaper.ui.screens
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -8,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +29,7 @@ import com.bufferbloatshaper.model.ShaperProfile
 import com.bufferbloatshaper.model.VpnRuntimeStateStore
 import com.bufferbloatshaper.model.VpnRuntimeStatus
 import com.bufferbloatshaper.ui.theme.*
+import com.bufferbloatshaper.util.LocalDiagnostics
 import com.bufferbloatshaper.util.Preferences
 import com.bufferbloatshaper.vpn.ShaperVpnService
 
@@ -40,6 +46,8 @@ fun SettingsScreen(
     val preferences = remember { Preferences(context) }
     var config by remember { mutableStateOf(preferences.loadConfig()) }
     val runtime by VpnRuntimeStateStore.state.collectAsState()
+    val healthTimeline by VpnRuntimeStateStore.timeline.collectAsState()
+    val capabilitySummary = rememberNetworkCapabilitySummary(context, config)
     var appPackages by remember {
         mutableStateOf(config.appRoutingPolicy.normalizedPackages().joinToString(", "))
     }
@@ -166,7 +174,7 @@ fun SettingsScreen(
         // ---- Per-app routing ----
         SectionCard(title = "Per-app VPN Routing") {
             Text(
-                "Optional. Use Android's supported app routing APIs to shape only selected apps or bypass selected apps. Enter package names such as com.example.app; unavailable packages block startup safely.",
+                "Optional. Use Android's supported app routing APIs to shape only selected apps or bypass selected apps. Enter package names such as com.example.app; unsupported entries block startup safely before a route is created.",
                 style = MaterialTheme.typography.bodySmall,
                 color = OnSurfaceDim
             )
@@ -359,7 +367,7 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             DisclaimerItem(
-                icon = Icons.Default.TrendingUp,
+                icon = Icons.AutoMirrored.Filled.TrendingUp,
                 text = "Set caps from an independent physical-network measurement. Automatic calibration stays disabled until direct probe evidence is available."
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -374,8 +382,85 @@ fun SettingsScreen(
             )
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SectionCard(title = "Local Diagnostics") {
+            Text(
+                "${capabilitySummary.androidVersion} • ${capabilitySummary.transport}",
+                style = MaterialTheme.typography.bodySmall,
+                color = OnSurface
+            )
+            Text(
+                "Network validated: ${capabilitySummary.validated} • Captive portal indicated: ${capabilitySummary.captivePortalDetected}",
+                style = MaterialTheme.typography.labelSmall,
+                color = OnSurfaceDim
+            )
+            Text(
+                "${healthTimeline.size} local health event(s) retained in this app process.",
+                style = MaterialTheme.typography.labelSmall,
+                color = OnSurfaceDim
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = { LocalDiagnostics.shareRedactedReport(context) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated, contentColor = OnSurface)
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Share redacted diagnostic")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Nothing is uploaded automatically. The report includes device make/model and local timestamps, but excludes free-form errors, payloads, DNS names, addresses, app packages, and phone identifiers.",
+                style = MaterialTheme.typography.labelSmall,
+                color = OnSurfaceDim
+            )
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
     }
+}
+
+@Composable
+private fun rememberNetworkCapabilitySummary(
+    context: Context,
+    config: ShaperConfig
+): LocalDiagnostics.CapabilitySummary {
+    val summary = remember(context, config) {
+        mutableStateOf(LocalDiagnostics.capabilitySummary(context, config))
+    }
+    DisposableEffect(context, config) {
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (connectivity == null) return@DisposableEffect onDispose {}
+
+        fun refresh() {
+            summary.value = LocalDiagnostics.capabilitySummary(context, config)
+        }
+
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = refresh()
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = refresh()
+
+            override fun onLost(network: Network) = refresh()
+        }
+
+        var registered = false
+        try {
+            connectivity.registerDefaultNetworkCallback(callback)
+            registered = true
+        } catch (_: SecurityException) {
+            // The initial snapshot remains useful if an OEM blocks callbacks.
+        }
+
+        onDispose {
+            if (registered) {
+                runCatching { connectivity.unregisterNetworkCallback(callback) }
+            }
+        }
+    }
+    return summary.value
 }
 
 @Composable

@@ -41,13 +41,14 @@
                 android:value="false" />
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Local-only VPN traffic shaping; no remote proxy, traffic inspection, or telemetry." />
+                android:value="Local-only VPN engine lifecycle. The checked-in engine fails closed before routing traffic; no remote proxy, traffic inspection, or telemetry." />
         </service>
 
-        <!-- VPN usage disclosure required by Google Play policy -->
+        <!-- Local source-prototype disclosure. A future Play listing needs its
+             own current-policy review before distribution. -->
         <meta-data
             android:name="com.bufferbloatshaper.VPN_DISCLOSURE"
-            android:value="This app uses Android's VpnService to intercept and shape network traffic locally on your device. No traffic is sent to any remote server. The VPN interface is used solely as a local traffic interception mechanism for bufferbloat mitigation." />
+            android:value="This source prototype checks for a verified local packet engine before creating a VPN route. The checked-in engine is unavailable, so it leaves ordinary device networking unchanged. No traffic is sent to a project-operated server." />
 
     </application>
 

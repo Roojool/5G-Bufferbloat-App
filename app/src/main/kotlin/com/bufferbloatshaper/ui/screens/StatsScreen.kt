@@ -99,7 +99,7 @@ fun StatsScreen(modifier: Modifier = Modifier) {
                 right = Metric("AQM drops", if (active) metrics.droppedPackets.toString() else "—", "reported", Icons.Default.RemoveCircle, Error)
             )
             Spacer(modifier = Modifier.height(8.dp))
-            InfoLine("A future gVisor engine owns TCP recovery before CoDel/FQ may drop packets. The legacy Kotlin relay is not used in production.")
+            InfoLine("A future gVisor engine must own TCP recovery before CoDel/FQ may drop packets. No fallback relay is shipped.")
         }
 
         Spacer(modifier = Modifier.height(16.dp))

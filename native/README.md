@@ -3,13 +3,13 @@
 This is a **compile-oriented JNI boundary only**. It is wired into the Android
 Gradle module and has a typed Kotlin bridge, but it does not provide packet
 relaying. The checked-in Android service checks its unavailable capability
-before establishing a TUN route, so it cannot accidentally activate the
-historical Kotlin relay.
+before establishing a TUN route, so it cannot accidentally activate an unsafe
+fallback data path.
 
-The local development environment has Android NDK r28c available, but no Go
-toolchain, gVisor checkout, tun2socks checkout, or pinned native netstack
-dependency. Consequently, the checked-in `bufferbloat_native_engine` library is
-an intentionally safe `stub-unavailable` implementation:
+This repository does not yet vendor a pinned Go toolchain, gVisor checkout, or
+other reviewed native netstack dependency. Consequently, the checked-in
+`bufferbloat_native_engine` library is an intentionally safe
+`stub-unavailable` implementation:
 
 - `bb_native_engine_is_available()` returns `0`.
 - `start` and `update_config` return `BB_NATIVE_STATUS_UNAVAILABLE`.
@@ -25,26 +25,39 @@ restore ordinary connectivity rather than leave a black-hole VPN active.
 ## Contract
 
 [`include/bufferbloat_native_engine.h`](include/bufferbloat_native_engine.h)
-defines ABI version 1. It supplies the future engine boundary for:
+defines ABI version 2. It supplies the future engine boundary for:
 
-- creation, borrowed-TUN start, atomic configuration update, and idempotent
-  stop;
+- creation, borrowed-TUN start with a narrow Android socket-protection
+  callback, atomic configuration update, and idempotent stop;
 - pull-based health/event snapshots, aggregate metrics, and per-flow metric
   lookup;
-- explicit engine state and failure status codes with no user traffic data in
-  the diagnostic interface.
+- explicit engine state, feature bits, and failure status codes with no user
+  traffic data in the diagnostic interface.
 
-`start` receives a **borrowed** descriptor. Kotlin remains responsible for the
+`start` receives a **borrowed** descriptor through
+`BbNativeEngineStartParams`. Kotlin remains responsible for the
 `ParcelFileDescriptor`; any future successful engine must duplicate the FD
 before returning and must never close the caller's descriptor. This avoids a
 failed native start leaking a descriptor or stealing lifecycle ownership from
-the VPN service.
+the VPN service. All extensible ABI structures carry `abi_version` and
+`struct_size` so a future adapter can reject an incompatible caller safely.
+
+`BbNativeSocketProtector` is equally important: a real engine must call its
+`protect_socket(fd)` callback immediately after every direct outbound
+`socket()` and before bind/connect/send. It must close and report a typed error
+if the callback fails—never fall back to an unprotected socket that could loop
+through the VPN. The JNI bridge holds a global Kotlin callback reference only
+until native `stop` has joined all workers; it never passes a `VpnService` or
+Android `Context` into the engine.
 
 `src/jni_bridge.cpp` exports unmangled JNI methods for
 `com.bufferbloatshaper.nativeengine.NativeEngineBridge`. The checked-in Kotlin
 adapter loads the library, reports its unavailable capability, and supports the
 future lifecycle/metrics contract. The bridge validates JNI handles against a
-native live-handle set to make stale/double-destroy calls harmless.
+native live-handle set to make stale/double-destroy calls harmless in the
+checked-in stub. A real asynchronous engine must replace the raw-pointer
+registry with opaque monotonic tokens and per-session lifetime gates before it
+is enabled.
 
 The array layouts used by the bridge are deliberately documented here so the
 future Kotlin adapter can turn them into typed runtime-state models without
@@ -52,14 +65,13 @@ reflecting private native fields:
 
 | Method | Array values, in order |
 | --- | --- |
-| `nativeGetHealth` (`IntArray`) | status, state, lastStatus, lastEventType, detailCode, generation |
+| `nativeGetHealth` (`LongArray`) | status, state, lastStatus, lastEventType, detailCode, generation |
 | `nativeGetMetrics` (`LongArray`) | status, state, generation, sampledAtMs, packetsIn, packetsOut, bytesIn, bytesOut, activeFlows, queuedBytes, aqmDrops, udpPacketsPaced |
 | `nativePollEvent` (`LongArray`) | status, type, eventStatus, detailCode, generation, occurredAtMs |
+| `nativeGetFlowMetrics` (`LongArray`) | status, state, generation, opaqueFlowId, bytesIn, bytesOut, queuedBytes, aqmDrops, protocol, reserved |
 
-The full C structures retain wider timestamps and counters. The JNI health
-generation field is intentionally a compact convenience field; a typed future
-adapter should prefer the C ABI directly or widen it if generations could grow
-beyond an `Int`.
+The Kotlin bridge preserves 64-bit generations and timestamps. No array or
+event may include addresses, ports, DNS names, package names, or payload data.
 
 ## Local NDK compile check
 
@@ -93,12 +105,13 @@ real engine has been reviewed or vendored. A production migration must:
 2. Implement this C ABI with a real userspace netstack that owns TCP state,
    IPv4/IPv6 forwarding, retransmission, ordering, teardown, and receive-window
    accounting.
-3. Make the implementation duplicate the borrowed TUN FD, publish only
+3. Make the implementation duplicate the borrowed TUN FD, invoke the supplied
+   socket-protection callback before every direct socket connects, publish only
    aggregate/redacted metrics, and provide deterministic stop/join behavior.
 4. Replace the unavailable stub with a reviewed adapter while preserving the
-   Kotlin/Gradle ABI contract and release ABI packaging.
+   Kotlin/Gradle ABI contract, required feature bits, and release ABI packaging.
 5. Prove the real engine on all three ABIs with tests and real-device traffic before routing
    any production traffic through it.
 
 Until those conditions are met, this native directory is an integration seam,
-not a functioning replacement for the current Kotlin relay.
+not a functioning packet engine.

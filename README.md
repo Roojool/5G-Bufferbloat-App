@@ -8,9 +8,9 @@ Bufferbloat Shaper explores whether an Android `VpnService` can reduce added lat
 
 - A Compose Android UI, observable runtime-state scaffold, and a `VpnService` lifecycle implementation that fails safely when its native engine is unavailable.
 - A versioned JNI boundary packaged for `arm64-v8a`, `armeabi-v7a`, and `x86_64`. The checked-in native implementation is deliberately an unavailable stub and never relays a packet.
-- Historical IPv4 packet parsing and UDP/TCP relay code, plus token bucket, CoDel-style AQM, fair queuing, calibration, validation, notification, and statistics scaffolding.
+- Pure Kotlin reference tests for TokenBucket, CoDel-style AQM, and fair-queue behavior, plus calibration, validation, notification, and statistics scaffolding. They are not connected to a traffic path.
 
-The implementation is **not a completed shaper**. In fact, the checked-in build intentionally does not activate a VPN route: it reports that a verified native packet engine is unavailable and leaves the device on its ordinary network. The historical Kotlin TCP relay is retained only as reference/migration code; it lacks production TCP behavior such as retransmission and robust out-of-order handling. IPv6 forwarding, live metrics, calibration, and validation are also incomplete. Read [Limitations](docs/LIMITATIONS.md) before installing or testing it.
+The implementation is **not a completed shaper**. The checked-in build intentionally does not activate a VPN route: it reports that a verified native packet engine is unavailable and leaves the device on its ordinary network. The unsafe hand-written Kotlin packet relay was removed from the shipped module rather than retained as an activation fallback. IPv6 forwarding, live metrics, calibration, and validation are incomplete. Read [Limitations](docs/LIMITATIONS.md) before installing or testing it.
 
 ## Product boundaries
 
@@ -30,7 +30,7 @@ The implementation is **not a completed shaper**. In fact, the checked-in build 
 - [Contributing](CONTRIBUTING.md)
 - [Security reporting](SECURITY.md)
 - [Original technical/product plan](mobile-bufferbloat-shaper-plan.md)
-- [Corrected project status and roadmap](bufferbloat-shaper-status-and-roadmap.md)
+- [Current roadmap and release gates](docs/ROADMAP.md)
 
 ## Build from source
 

@@ -6,6 +6,12 @@ For this project, “built” and “works” are different claims. Every behavi
 
 ## Automated checks
 
+The JVM suite also covers the bounded local health timeline and verifies that
+the manually shared diagnostic report exports only structured transition
+status/generation values, never free-form error detail. Device make/model and
+local timestamps are intentionally visible in that report and must be reviewed
+before the user shares it.
+
 The repository CI runs these source-level checks on JDK 21:
 
 ```text
@@ -18,7 +24,7 @@ They establish that the source can assemble and pass available static/unit check
 
 The debug assembly also compiles the intentionally unavailable JNI-stub boundary for `arm64-v8a`, `armeabi-v7a`, and `x86_64`. That is an ABI packaging and fail-closed capability check, not a native data-plane or traffic test.
 
-New code should add unit tests for packet parsing/checksums, queue accounting, token bucket behavior, CoDel-style logic, fair queuing, configuration, calibration calculations, DNS behavior, profiles, and validation grading. Instrumentation tests should cover VPN lifecycle, configuration changes, health transitions, native library loading once present, and safe fallback behavior.
+New native-engine work should add native/unit tests for packet parsing/checksums, TCP state, queue accounting, TokenBucket behavior, CoDel-style logic, fair queuing, DNS behavior, profiles, calibration calculations, and validation grading. It must also test `VpnService.protect(fd)` before every direct connect, false/throw protect paths, no callback after stop, and bounded typed-event behavior. Instrumentation tests should cover VPN lifecycle, configuration changes, health transitions, native library loading, and safe fallback behavior.
 
 ## Device test record
 
@@ -58,7 +64,7 @@ Before a result can be called a bufferbloat improvement:
 4. Record actual throughput, duration, packet loss/error behavior, and repeated samples.
 5. Compare equivalent network conditions as closely as possible.
 
-Do not grade or market a result when the VPN state, flow path, or latency method is unknown. In particular, the current local ICMP echo behavior is not an Internet RTT measurement.
+Do not grade or market a result when the VPN state, flow path, or latency method is unknown. The current service does not claim raw-ICMP support; a future measurement method must state exactly what it measures.
 
 ## When to stop testing
 

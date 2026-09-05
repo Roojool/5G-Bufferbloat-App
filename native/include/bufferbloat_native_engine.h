@@ -22,9 +22,23 @@
 extern "C" {
 #endif
 
-#define BB_NATIVE_ENGINE_ABI_VERSION 1u
+#define BB_NATIVE_ENGINE_ABI_VERSION 2u
 
 typedef struct BbNativeEngine BbNativeEngine;
+
+/* Features a real engine must declare before Android routes traffic to it. */
+typedef enum BbNativeEngineFeature {
+    BB_NATIVE_FEATURE_IPV4_TCP = 1ull << 0,
+    BB_NATIVE_FEATURE_PROTECTED_SOCKETS = 1ull << 1,
+    BB_NATIVE_FEATURE_SAFE_STOP = 1ull << 2,
+    BB_NATIVE_FEATURE_HEALTH_EVENTS = 1ull << 3,
+    BB_NATIVE_FEATURE_FLOW_METRICS = 1ull << 4,
+} BbNativeEngineFeature;
+
+#define BB_NATIVE_REQUIRED_FEATURES \
+    (BB_NATIVE_FEATURE_IPV4_TCP | BB_NATIVE_FEATURE_PROTECTED_SOCKETS | \
+     BB_NATIVE_FEATURE_SAFE_STOP | BB_NATIVE_FEATURE_HEALTH_EVENTS | \
+     BB_NATIVE_FEATURE_FLOW_METRICS)
 
 typedef enum BbNativeStatus {
     BB_NATIVE_STATUS_OK = 0,
@@ -53,6 +67,8 @@ typedef enum BbNativeEngineEventType {
     BB_NATIVE_ENGINE_EVENT_NONE = 0,
     BB_NATIVE_ENGINE_EVENT_ENGINE_UNAVAILABLE = 1,
     BB_NATIVE_ENGINE_EVENT_HEALTH_FAILURE = 2,
+    BB_NATIVE_ENGINE_EVENT_PROTECT_SOCKET_FAILED = 3,
+    BB_NATIVE_ENGINE_EVENT_EVENT_OVERFLOW = 4,
 } BbNativeEngineEventType;
 
 typedef enum BbNativeEngineDetailCode {
@@ -67,18 +83,47 @@ typedef enum BbNativeEngineDetailCode {
  */
 typedef struct BbNativeEngineConfig {
     uint32_t abi_version;
+    uint32_t struct_size;
     uint32_t flags;
     int64_t egress_rate_bytes_per_second;
     int64_t ingress_rate_bytes_per_second;
     uint32_t codel_target_ms;
     uint32_t codel_interval_ms;
     uint32_t fair_queue_quantum_bytes;
+    uint32_t fair_queue_buckets;
+    uint32_t headroom_per_mille;
+    uint32_t burst_per_mille;
     uint32_t reserved;
 } BbNativeEngineConfig;
+
+/*
+ * Native code must invoke this immediately after socket() and before
+ * bind/connect/send. A false result means it must close that socket, emit a
+ * typed failure, and never fall back to an unprotected socket. The TUN FD is
+ * never passed to this callback.
+ */
+typedef int32_t (*BbNativeProtectSocketFn)(void* context, int socket_fd);
+
+typedef struct BbNativeSocketProtector {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    BbNativeProtectSocketFn protect_socket;
+    void* context;
+} BbNativeSocketProtector;
+
+typedef struct BbNativeEngineStartParams {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    int32_t tun_fd;
+    uint32_t reserved;
+    const BbNativeEngineConfig* config;
+    const BbNativeSocketProtector* socket_protector;
+} BbNativeEngineStartParams;
 
 /* A pull-based health snapshot; no callback crosses the JNI lifetime boundary. */
 typedef struct BbNativeEngineHealth {
     uint32_t abi_version;
+    uint32_t struct_size;
     uint32_t state;
     int32_t last_status;
     uint32_t last_event_type;
@@ -91,6 +136,7 @@ typedef struct BbNativeEngineHealth {
 /* Aggregate counters from a real engine. The stub always returns zero traffic. */
 typedef struct BbNativeEngineMetrics {
     uint32_t abi_version;
+    uint32_t struct_size;
     uint32_t state;
     uint64_t generation;
     uint64_t sampled_at_monotonic_ms;
@@ -107,6 +153,7 @@ typedef struct BbNativeEngineMetrics {
 /* Per-flow counters. Flow identifiers are opaque and local to one generation. */
 typedef struct BbNativeFlowMetrics {
     uint32_t abi_version;
+    uint32_t struct_size;
     uint32_t state;
     uint64_t generation;
     uint64_t flow_id;
@@ -120,6 +167,7 @@ typedef struct BbNativeFlowMetrics {
 
 typedef struct BbNativeEngineEvent {
     uint32_t abi_version;
+    uint32_t struct_size;
     uint32_t type;
     int32_t status;
     uint32_t detail_code;
@@ -134,6 +182,9 @@ typedef struct BbNativeEngineEvent {
  */
 BB_NATIVE_API int32_t bb_native_engine_is_available(void);
 
+/* A bitset of BbNativeEngineFeature values; the checked-in stub returns zero. */
+BB_NATIVE_API uint64_t bb_native_engine_feature_bits(void);
+
 /* Static, non-user-specific build description for diagnostics. */
 BB_NATIVE_API const char* bb_native_engine_build_info(void);
 
@@ -147,8 +198,7 @@ BB_NATIVE_API void bb_native_engine_destroy(BbNativeEngine* engine);
  */
 BB_NATIVE_API int32_t bb_native_engine_start(
     BbNativeEngine* engine,
-    int tun_fd,
-    const BbNativeEngineConfig* config);
+    const BbNativeEngineStartParams* params);
 
 BB_NATIVE_API int32_t bb_native_engine_update_config(
     BbNativeEngine* engine,

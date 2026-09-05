@@ -2,7 +2,7 @@
 
 ## Status
 
-This is a source-only prototype. Building an APK does **not** make it a supported or safe-to-use release. The checked-in native engine is deliberately unavailable, so the service refuses to establish a VPN route rather than shape traffic through an unsafe legacy relay. No signed APK/AAB is published or endorsed by this repository at this stage.
+This is a source-only prototype. Building an APK does **not** make it a supported or safe-to-use release. The checked-in native engine is deliberately unavailable, so the service refuses to establish a VPN route rather than activate an unsafe fallback. No signed APK/AAB is published or endorsed by this repository at this stage.
 
 ## Prerequisites
 

@@ -2,7 +2,7 @@
 
 ## Read this before testing
 
-Bufferbloat Shaper is an unreleased research prototype. It may interrupt or fail to relay traffic. Do not depend on it for emergency communication, work-critical connectivity, financial activity, or any situation where a connectivity failure would be harmful.
+Bufferbloat Shaper is an unreleased research prototype. The checked-in build deliberately does not relay traffic, and a future engine could affect connectivity if it is implemented incorrectly. Do not depend on it for emergency communication, work-critical connectivity, financial activity, or any situation where a connectivity failure would be harmful.
 
 ## Permanent product boundaries
 
@@ -18,11 +18,11 @@ These are intentional design limits, not missing toggles:
 
 The following are release blockers, not caveats to hide from users:
 
-- The checked-in native engine is an intentionally unavailable stub. The service must refuse to establish a TUN route rather than run an unsafe legacy relay, so this build does not currently shape traffic.
-- The TUN-facing TCP path is a hand-written partial relay without the full TCP state machinery needed for production reliability.
+- The checked-in native engine is an intentionally unavailable stub. The service refuses to establish a TUN route rather than run an unsafe fallback, so this build does not currently shape traffic.
+- No TUN-facing TCP data plane is shipped. A future engine must provide full TCP state machinery before it can route traffic.
 - The historical IPv6/DNS prototype routed IPv6 without a working forwarding path and changed resolver behavior. IPv6 routes and DNS substitution are now absent from the service; a native implementation must preserve normal resolver behavior before DNS interception is enabled.
 - TCP download shaping is scaffolding, not a validated receive-window controller.
-- Calibration estimates are not validated against independent physical-network measurements; the active upload estimate is a heuristic.
+- Calibration does not yet take or persist independent physical-network measurements; automatic updates remain disabled rather than feeding shaped throughput back into its own limit.
 - The statistics UI reports only aggregate metrics supplied by a native engine, configured caps, or an explicit unavailable value. It has no random/sample charts, but no live metrics exist while the stub is installed.
 - The validation screen is a visible release gate, not a benchmark. It intentionally withholds before/after scores until independent two-way load generation, verified shaper state, and local measurement persistence exist.
 - Lifecycle, handover, captive portal, screen-off, and battery behavior are not proven on physical carrier networks.

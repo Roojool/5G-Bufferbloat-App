@@ -1,6 +1,7 @@
 package com.bufferbloatshaper.nativeengine
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -19,5 +20,6 @@ class NativeEngineInstrumentationTest {
 
         assertFalse("The checked-in engine must fail closed until gVisor is integrated", capability.available)
         assertNotNull("An unavailable engine must explain itself", capability.detail)
+        assertEquals("The unavailable stub must not advertise traffic features", 0L, capability.featureBits)
     }
 }

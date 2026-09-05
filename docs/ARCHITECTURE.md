@@ -2,7 +2,7 @@
 
 ## Status and terminology
 
-This document separates the **current prototype** from the **production target**. A class or screen in the repository is not proof that the corresponding network behavior is reliable. The detailed evidence record is [the status and roadmap](../bufferbloat-shaper-status-and-roadmap.md).
+This document separates the **current prototype** from the **production target**. A class or screen in the repository is not proof that the corresponding network behavior is reliable. The current implementation roadmap and evidence gates are in [the roadmap](ROADMAP.md).
 
 ## Product boundary
 
@@ -23,29 +23,15 @@ User requests shaping -> NativeEngineBridge capability check -> unavailable
   -> VpnRuntimeState = UNSUPPORTED -> no VPN routes established -> normal device networking remains in use
 ```
 
-This is deliberate. The source must not turn on the historical Kotlin relay merely because a button was pressed; that relay does not meet the reliability requirements for a TUN-facing TCP stack.
-
-## Historical prototype data path
-
-The repository retains the earlier Kotlin relay implementation as migration/reference code. Its high-level design was:
-
-```text
-Apps
-  -> VpnService TUN
-  -> PacketReader / IPv4 parser
-  -> TCP: EgressShaper -> TcpRelay -> protected Java socket
-  -> UDP: UdpRelay -> protected datagram socket
-  -> relay response -> PacketBuilder -> PacketWriter -> TUN -> apps
-```
-
-`EgressShaper` contains the token bucket, CoDel-style queue management, and fair-queue primitives. `TcpRelay` and `UdpRelay` own the corresponding historical prototype behavior. They are not instantiated by the current `ShaperVpnService`; the historical DNS relay was removed to avoid resolver substitution.
+This is deliberate. The unsafe hand-written Kotlin packet relay was removed
+from the shipped module rather than retained as a button-triggered fallback.
 
 ### Known implementation gaps
 
 - The native engine is a safe stub. It deliberately returns unavailable and does not parse, retain, relay, queue, inspect, or close traffic/TUN file descriptors.
-- The historical `TcpRelay` is hand-written and partial. It does not provide the mature retransmission, reordering, congestion, and teardown behavior required of a production TUN-facing TCP stack.
-- The historical VPN builder installed IPv6 routing without a forwarding path. IPv6 must not be advertised as supported until a complete native forwarding path is implemented and tested.
-- The prior DNS relay was removed because resolver substitution and synthetic A/AAAA responses do not preserve a user's DNS policy. A native engine must forward ordinary DNS traffic unchanged before DNS interception is enabled.
+- No TUN-facing TCP/IP stack is shipped. A future engine needs mature retransmission, reordering, congestion, and teardown behavior before it can route traffic.
+- IPv6 must not be advertised as supported until a complete native forwarding path is implemented and tested.
+- DNS resolver substitution is absent because it would not preserve a user's DNS policy. A native engine must forward ordinary DNS traffic unchanged before DNS interception is enabled.
 - Calibration, ingress control, and the validation benchmark remain unverified. Runtime statistics now display only engine-reported aggregate data or an explicit unavailable value; they are not performance evidence until a real engine exists.
 
 These gaps mean the prototype must not be relied on for normal connectivity or sensitive traffic.
@@ -65,10 +51,16 @@ The native engine is expected to own IPv4/IPv6 forwarding, TCP state, retransmis
 
 The intended Kotlin/native contract is deliberately small:
 
-- Start with the TUN file descriptor and immutable configuration.
+- Start with the borrowed TUN descriptor, immutable configuration, and only a
+  narrow `VpnService.protect(fd)` socket-protection callback.
 - Atomically update shaping configuration.
 - Stop and join the current engine generation.
 - Emit aggregate metrics, per-flow metrics, and health/failure events.
+
+A real engine must declare the required IPv4 TCP, protected-socket, safe-stop,
+health-event, and flow-metric feature bits before the service establishes a
+route. It must join all workers before Kotlin closes the TUN or releases the
+socket-protection callback.
 
 ## Shaping model
 
@@ -81,7 +73,7 @@ The intended Kotlin/native contract is deliberately small:
 The release implementation must preserve these invariants:
 
 1. At most one active VPN/TUN generation owns writes and a wake lock.
-2. Stop or failure cancels and joins every relay task before closing the TUN descriptor.
+2. Stop or failure cancels and joins every native/Kotlin worker before closing the TUN descriptor.
 3. IPv6, DNS, captive-portal handling, and per-app routing are enabled only when their forwarding behavior is verified.
 4. A health failure disables or bypasses the local path with a visible, recoverable explanation; it must not silently black-hole traffic.
 5. Metrics shown in the UI and notifications come from measured runtime state, never sample or random values.
@@ -92,12 +84,12 @@ The release implementation must preserve these invariants:
 |---|---|---|
 | Android entry and UI | `com.bufferbloatshaper` / `ui` | Activity, Compose screens, user configuration |
 | Runtime model | `model` | Configuration, routing preferences, and process-local `VpnRuntimeState` |
-| VPN and packet handling | `vpn` | TUN service, parsers, relays, packet I/O |
+| VPN lifecycle | `vpn` | Serialized service lifecycle and safe Android VPN ownership |
 | Native boundary | `nativeengine` / `native` | Kotlin/JNI ABI contract and intentionally unavailable native stub |
-| Shaping | `shaping` | Token bucket, CoDel-style AQM, fair queue, ingress-controller scaffold |
-| Calibration | `calibration` | Network-state monitoring and active/passive estimate scaffolding |
-| Validation | `validation` | Before/after test scaffold and grades |
-| Local utilities | `util` | Preferences, notification, battery monitoring |
+| Shaping references | `shaping` | Unit-tested TokenBucket, CoDel-style AQM, and fair-queue reference logic; no live packet path |
+| Calibration | `calibration` | Network-state monitoring and independently supplied capacity-sample scaffold; no automatic update path |
+| Validation | `validation` | Validation-gate UI and grade model; no benchmark runs in the current build |
+| Local utilities | `util` | Preferences, notification, user-initiated redacted health-timeline diagnostic |
 
 ## Privacy design requirement
 

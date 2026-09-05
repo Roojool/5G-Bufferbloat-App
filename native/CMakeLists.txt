@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(bufferbloat_native_engine LANGUAGES CXX)
 
-# This directory is intentionally an Android-NDK-only scaffold.  The app's
-# Gradle module does not consume it yet; that integration belongs in the
-# native-engine migration change, after a real netstack has been vendored and
-# verified for every ABI.
+# This directory is intentionally an Android-NDK-only scaffold. The app's
+# Gradle module packages its unavailable stub for every release ABI. A real
+# netstack integration remains blocked until it has been vendored, reviewed,
+# and verified for every ABI.
 if(NOT ANDROID)
     message(FATAL_ERROR
         "bufferbloat_native_engine must be configured with the Android NDK toolchain")

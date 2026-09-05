@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import com.bufferbloatshaper.model.ShaperConfig
 import com.bufferbloatshaper.model.VpnRuntimeStateStore
 import com.bufferbloatshaper.model.VpnRuntimeStatus
+import com.bufferbloatshaper.nativeengine.NativeEngineBridge
 import com.bufferbloatshaper.ui.components.SpeedGauge
 import com.bufferbloatshaper.ui.components.StatusCard
 import com.bufferbloatshaper.ui.theme.Background
@@ -151,6 +152,13 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
                 if (isActive) {
                     stopVpnService(context)
                 } else {
+                    // Do not show Android's VPN-consent sheet for the checked-in
+                    // unavailable stub. Starting the service surfaces the same
+                    // recoverable reason without requesting a route permission.
+                    if (!NativeEngineBridge.capability().available) {
+                        startVpnService(context, preferences.loadConfig())
+                        return@PowerToggle
+                    }
                     val permissionIntent = VpnService.prepare(context)
                     if (permissionIntent != null) {
                         vpnLauncher.launch(permissionIntent)
