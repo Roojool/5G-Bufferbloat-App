@@ -43,6 +43,11 @@ logs/
 # Local diagnostic output
 build_error.log
 
+# Root-local generated artifacts
+/.codex-artifacts/
+/.codex-finalizer/
+/output/
+
 # OS
 .DS_Store
 Thumbs.db

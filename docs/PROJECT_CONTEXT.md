@@ -1,43 +1,54 @@
 # Current Project Context
 
-Snapshot: 2026-09-11. This concise handoff describes the documentation rebaseline
-on `codex/docs-rebaseline`, based on main implementation commit
-`7cb9289147c519ca42fee1603fceeda2587cf447`. No app, native, Gradle, or CI behavior
-changes in this rebaseline. The final correction pass starts from PR #3 head
-`9c90027e81ed8f5f5e2fd18938a2376eef8a85df` on the same branch. Refresh this file
-after engineering work.
+Snapshot: 2026-09-11, after the documentation rebaseline merged. Current remote
+main (`origin/main`) is `529dfdd06c156fe6889edf19333b759031a629b1`, the PR #3 merge
+commit. This hygiene follow-up uses `codex/repo-hygiene-after-rebaseline`, created
+directly from that main. It changes only root-local artifact ignore rules and
+repository-state documentation; app, native, Gradle and CI behavior are unchanged.
+Refresh this file after engineering work.
 
 ## Repository and release state
 
-- Main and origin/main were both `7cb9289` at inspection; tracked files were
-  clean. Existing untracked `.codex-artifacts/`, `.codex-finalizer/`, and `output/`
-  are local material, not implementation or evidence adopted by this handoff.
+- [PR #3](https://github.com/Roojool/5G-Bufferbloat-App/pull/3) is **MERGED** into
+  main at `529dfdd06c156fe6889edf19333b759031a629b1` (2026-09-11 17:38:21 UTC).
+  Its canonical documentation, including AGENTS.md, is now checked-in main truth.
+  The rebaseline changed documentation, not the implementation.
 - [PR #1: Clean repository hygiene and track AGENTS.md](https://github.com/Roojool/5G-Bufferbloat-App/pull/1)
   and [PR #2: Add AI project handoff and future-phase prompt guide](https://github.com/Roojool/5G-Bufferbloat-App/pull/2)
-  were open, based on main, with successful CI. Neither is included in this
-  branch; the final correction pass reconfirmed both OPEN with no merge commit.
-  PR #3's AGENTS.md **supersedes** the version proposed in PR #1. PR #1's useful
-  `.gitignore` hygiene should later be recreated as a separate small PR based on
-  the new main after this rebaseline merges; do not merge the old AGENTS proposal.
-  PR #2's AI_PROJECT_HANDOFF sequence is superseded by PROJECT_CONTEXT +
-  DESIGN_DECISIONS + ROADMAP and must not be merged unchanged. This task does not
-  modify, close or merge either PR.
-- [PR #3](https://github.com/Roojool/5G-Bufferbloat-App/pull/3) remains open on
-  `codex/docs-rebaseline`, based directly on main. Its incoming `9c90027` head
-  had successful push/PR CI and still required review. The correction commit and
-  its fresh checks belong to this same PR; none of its docs is on main yet.
-- [Main CI at the implementation baseline](https://github.com/Roojool/5G-Bufferbloat-App/actions/runs/33964804525)
-  succeeded. CI builds the debug app and instrumentation APK, runs JVM tests and
-  lint; it does not execute physical network tests.
-- The initial rebaseline's local four-task CI-equivalent check reported `BUILD SUCCESSFUL
+  are both **CLOSED / UNMERGED** (`mergedAt: null`), closed on 2026-09-11.
+  PR #3's adopted AGENTS.md supersedes PR #1's proposal. This hygiene follow-up
+  recreates only PR #1's useful root-scoped artifact ignore rules; it does not
+  restore that PR's AGENTS.md. PR #2's AI_PROJECT_HANDOFF sequence remains
+  superseded by PROJECT_CONTEXT + DESIGN_DECISIONS + ROADMAP and must not be
+  reintroduced unchanged. Historical PRs are not implementation evidence.
+- Live remote heads confirm `codex/repo-hygiene-cleanup` and
+  `codex/ai-project-handoff` are deleted. `codex/docs-rebaseline` still exists at
+  `ee18af1b3c63bda1eae11d1865421ba1e93b328f`; the older
+  `codex/public-release-foundation` branch also remains. This task deletes no
+  branches and modifies neither closed PR.
+- No PRs were open at inspection. The hygiene PR from
+  `codex/repo-hygiene-after-rebaseline` is the only current proposed change;
+  its exact commit, PR URL and fresh validation accompany the PR report.
+  Tracked files were clean before this follow-up. Existing `.codex-artifacts/`,
+  `.codex-finalizer/` and `output/` were untracked local/generated material with
+  no tracked Android/native build-input references. This branch ignores those
+  root directories; it neither commits nor deletes their contents and adopts
+  none of them as engineering evidence.
+- [Main CI for the merged rebaseline](https://github.com/Roojool/5G-Bufferbloat-App/actions/runs/34628820771)
+  is completed/success at `529dfdd06c156fe6889edf19333b759031a629b1`. CI builds the
+  debug app and instrumentation APK, runs JVM tests and lint; it does not execute
+  physical network tests. This main result is separate from hygiene-PR checks.
+- Historical evidence: the initial rebaseline's local four-task CI-equivalent check reported `BUILD SUCCESSFUL
   in 23s`, `82 actionable tasks: 7 executed, 75 up-to-date`. App/instrumentation
   assembly and JVM tests were UP-TO-DATE; no device tests ran. An SDK XML version
   mismatch warning was emitted. Its PR CI executed all 82 tasks successfully.
-  These are earlier results, not the correction pass's fresh validation; dated
+  These are earlier results, not this hygiene follow-up's fresh validation; dated
   command/output for each pass accompanies the PR.
 - Source-only, unreleased prototype. `versionName = "1.0.0"` is build metadata,
-  not a release. No APK/AAB distribution gate has passed. Main requires the
-  `Build, unit test, and lint` check, an approving review, and no force-push.
+  not a release. No APK/AAB distribution gate has passed. Live main protection
+  requires `Build, unit test, and lint`, has **0 required approving reviews**,
+  and disallows force-push. The earlier one-review statement was stale; this
+  task changes no protection settings and does not merge its own PR.
 
 ## Checked-in implementation and native state
 
@@ -65,7 +76,8 @@ after engineering work.
 
 Source inspection and linked CI establish the checked-in stub/contract, build
 packaging, and available JVM/static checks. They do not prove physical operation.
-No physical feature-support or bufferbloat result is recorded in this rebaseline.
+No physical networking experiment has passed; no physical feature-support or
+bufferbloat result is recorded. No traffic forwarding or shaping exists.
 
 **Unproven/not implemented:** real IPv4/IPv6 forwarding; real-engine protection,
 stop/recovery under traffic; TCP upload shaping; protected-socket TCP download
@@ -102,10 +114,12 @@ positive limits and implements neither directional capability gating nor shaping
 
 ## Next engineering gate and experiments
 
-Next is **Stage 1 feasibility**, before expensive gVisor integration: design a
+Next is **Stage 1 — protected-socket / transport feasibility**, before expensive
+gVisor integration: design a
 small internal stock-Android protected-socket harness, gather literal physical
 evidence for socket options/observability and receive backpressure, and define
-capability outcomes and fallback behavior. Do not activate the default stub.
+capability outcomes and fallback behavior. This hygiene task does not begin
+Stage 1 or activate the default stub.
 The experiment must distinguish option acceptance from an effective advertised
 window, server response, and loaded-latency benefit. A negative download result
 can narrow the product to proven upload capabilities; it cannot justify a claim.
@@ -150,7 +164,7 @@ the future implementation/release review needed; this PR does not upgrade SDKs.
 4. SOURCE_BUILD, PRIVACY, SECURITY, CONTRIBUTING and PLAY_COMPLIANCE own their
    respective build, data, reporting, contribution and dated policy details.
    RADIO_OPTIMIZATION, if created later, must remain subordinate to these bounds.
-5. mobile-bufferbloat-shaper-plan.md is superseded history. PR #2's unmerged
+5. mobile-bufferbloat-shaper-plan.md is superseded history. PR #2's closed/unmerged
    AI_PROJECT_HANDOFF sequence is superseded by PROJECT_CONTEXT,
-   DESIGN_DECISIONS and ROADMAP; do not merge it unchanged. This snapshot never
+   DESIGN_DECISIONS and ROADMAP; do not reintroduce it unchanged. This snapshot never
    makes a pending PR part of main.
