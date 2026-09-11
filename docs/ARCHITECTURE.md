@@ -2,7 +2,7 @@
 
 ## Status and terminology
 
-This document separates the **current prototype** from the **production target**. A class or screen in the repository is not proof that the corresponding network behavior is reliable. The current implementation roadmap and evidence gates are in [the roadmap](ROADMAP.md).
+This document separates the **current prototype** from the **production target**. A class or screen in the repository is not proof that the corresponding network behavior is reliable. Read [Project Context](PROJECT_CONTEXT.md) for the current handoff, [Design Decisions](DESIGN_DECISIONS.md) for rationale, and [Roadmap](ROADMAP.md) for sequence and evidence gates.
 
 ## Product boundary
 
@@ -16,10 +16,13 @@ There is no project-operated VPN gateway, proxy, traffic-inspection service, tel
 
 ## Current executable behavior
 
-The checked-in Android service checks the packaged native engine capability before it establishes a TUN interface. The checked-in engine is an intentionally unavailable stub, so a start request follows this safe path:
+The Android service validates configuration first: invalid settings, including
+initial zero limits, report ERROR without creating a route. For valid settings,
+it checks native capability before establishing TUN. The unavailable stub follows
+this path:
 
 ```text
-User requests shaping -> NativeEngineBridge capability check -> unavailable
+Valid-config start -> NativeEngineBridge capability check -> unavailable
   -> VpnRuntimeState = UNSUPPORTED -> no VPN routes established -> normal device networking remains in use
 ```
 
@@ -38,16 +41,41 @@ These gaps mean the prototype must not be relied on for normal connectivity or s
 
 ## Production target
 
-The planned production data plane moves TUN-facing TCP/IP behavior into a proven native userspace stack accessed through a narrow JNI boundary:
+The selected design uses a mature userspace stack through a narrow JNI boundary.
+It has **two separate TCP connections**, not one shared receive-window controller:
 
 ```text
-Apps -> VpnService TUN -> native TCP/IP stack -> protected direct sockets -> Internet
-                                  |                 |
-                            TCP receive-window       Token bucket -> AQM -> fair queue
-                            control for TCP only
+Connection A (app-facing):
+App TCP endpoint <-> VpnService TUN <-> gVisor/userspace TCP endpoint
+                                      ACK/window/retransmission owner for A
+                                                |
+                                      bounded ordered stream bridge
+                                      pacing / fairness / backpressure
+                                                |
+Connection B (Internet-facing):
+Protected Android/Linux TCP socket <-----------> real destination TCP endpoint
+ACK/window/retransmission owner for B
+Candidate download control: this socket's receive behavior/options
+
+UDP/QUIC: TUN datagrams <-> safe native forwarding <-> protected UDP sockets
 ```
 
-The native engine is expected to own safe IPv4 TCP and UDP forwarding, TCP state, retransmission, ordering, teardown, and TCP receive-window accounting. IPv6 forwarding is a later, separately proven stage; until then Android must allow it to bypass the IPv4-only local route. Kotlin retains Android lifecycle, configuration, UI, accessibility, and local diagnostics. The repository contains a JNI ABI boundary and an intentionally unavailable native stub for `arm64-v8a`, `armeabi-v7a`, and `x86_64`; it proves only packaging, capability, and lifecycle contracts—not packet relaying. A gVisor-based implementation remains a planned architecture, not evidence of a completed integration in this prototype.
+The userspace stack owns app-facing TCP state. Android/Linux owns the protected
+socket's independent TCP sequence space, ACKs, congestion control, retransmission
+and receive-window advertisement to the real server. The bridge transfers
+ordered bytes without decrypting application TLS. TCP termination is not TLS
+termination. Changing only gVisor's app-facing receive window limits app upload
+into that endpoint; it does not directly advertise a window to the server.
+
+Prove ordinary unshaped IPv4 TCP/UDP forwarding in Stage 2, then test internal
+upload shaping, measurement and adaptive autorate in Stage 3 to assess the
+primary upload-bufferbloat value before full dual-stack integration. Stage 4
+completes IPv6/dual-stack, DNS and network-transition correctness. IPv6 remains
+mandatory before broad whole-device support or public/default-route release
+claims; until it passes, allow IPv6 bypass in internal IPv4-only builds. Kotlin retains
+lifecycle, configuration, UI, accessibility and local diagnostics. The three-ABI
+JNI stub establishes a buildable contract, not a real stack or physical lifecycle
+proof. gVisor integration remains planned.
 
 The intended Kotlin/native contract is deliberately small:
 
@@ -68,9 +96,66 @@ TUN or releases the socket-protection callback.
 
 ## Shaping model
 
-- **TCP upload:** token bucket rate ceiling, controlled-delay queue management, and fair queuing operate before bytes are written to the direct socket.
-- **TCP download:** the target mechanism is advertised receive-window control by the local TCP endpoint. It must be measured and verified before it is exposed as a feature.
-- **UDP/QUIC:** lightweight upload pacing may be useful. Download-side shaping is out of scope because a local app cannot safely alter encrypted QUIC transport control without TLS interception.
+- **TCP upload:** bound per-flow and total buffering, including kernel send
+  buffers; fairly schedule paced writes under a token budget. Handle partial
+  writes and EAGAIN without losing bytes. Stop draining the app-facing stack when
+  downstream cannot progress, propagating backpressure. Preserve accepted stream
+  bytes in order through forwarding or explicit connection failure; never
+  discard arbitrary chunks to implement an AQM drop.
+- **TCP download (experimental):** test bounded reads/receive buffering and
+  TCP_WINDOW_CLAMP on the **protected remote-facing Android/Linux socket**.
+  TCP_INFO is a candidate observation source, not a shaping mechanism. Kernel
+  acceptance/readback do not establish a changed advertised window, sender
+  response or latency improvement. Physical tests must distinguish these claims,
+  scaling/autotuning effects and stall recovery before optional enablement.
+  No TCP_WINDOW_CLAMP/TCP_INFO code exists in the current source.
+- **Packet AQM:** CoDel-style dropping/ECN is a candidate only at a packet queue
+  with valid acceptance and retransmission semantics. Packets before receiver
+  acceptance or stack-generated packets with a retained sender retransmission
+  copy may qualify after review/tests. Already-read/acknowledged TCP bytes do
+  not; dropping them cannot recover the bridge's missing stream data.
+- **UDP/QUIC:** preserve datagrams and safe forwarding first. Optional upload
+  pacing and bounded datagram loss need an explicit policy and evidence.
+  Download shaping is out of scope; never discard UDP/QUIC merely because it
+  cannot use the TCP download controller.
+
+## Autorate, capabilities and device scope (planned)
+
+Prefer adaptive feedback from independently measured delay and load, with bounded
+rate changes, sample aging, probe failure handling, idle/handover resets and an
+explicit measurement budget. Static percentile × headroom may seed or bound a
+fallback but is not sufficient adaptation. Never estimate physical capacity only
+from traffic already limited by the current cap.
+
+Separate mandatory safe forwarding/lifecycle capabilities from optional socket
+controls and observations. Runtime probes on the actual Android/kernel/socket
+determine optional availability; unknown or failed probes disable the feature
+with a reason. Successful probes still need physical efficacy evidence. The
+existing ABI feature mask is a prerequisite contract, not this framework.
+Current configuration still requires positive upload and download limits.
+The following **future requirement** needs a separate implementation change:
+
+- Configuration and runtime state must track upload and TCP download capability,
+  requested limits, effective enablement and unavailable reasons independently.
+- Independently proven upload shaping must be available when optional TCP
+  download control is unavailable, without requiring a positive download limit.
+- Expose/enable a download-control setting only when its runtime capability is
+  verified; support bidirectional mode when both directions are supported.
+- A failed or stale optional download capability must disable that control while
+  preserving independently proven upload where forwarding remains safe.
+- The UI must never present a configured download limit as proof of effective
+  download control. A saved request and measured/verified behavior are distinct.
+
+Stage 3 implements this directional model for internal upload experiments;
+Stage 5 integrates optional protected-socket download control. Neither feature
+nor the revised configuration model exists in the checked-in stub.
+
+Universal correctness comes before OEM tuning. Profiles may optimize buffer,
+scheduling, battery or thermal budgets within proven invariants; they must not
+substitute for probes or forwarding. Later Radio Advisor/mapping may use
+user-authorized observations and recommendations after privacy review. Stock
+operation never forces LTE/NR bands, NSA/SA or carrier aggregation; exact band
+locking research belongs outside this universal application.
 
 ## Safety invariants
 

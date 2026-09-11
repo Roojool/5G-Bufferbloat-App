@@ -16,11 +16,15 @@ The repository CI runs these source-level checks on JDK 21:
 
 ```text
 :app:assembleDebug
+:app:assembleDebugAndroidTest
 :app:testDebugUnitTest
 :app:lintDebug
 ```
 
 They establish that the source can assemble and pass available static/unit checks. They cannot establish VPN reliability, carrier compatibility, radio behavior, or bufferbloat improvement.
+
+`assembleDebugAndroidTest` compiles/packages instrumentation tests; it does not
+execute them. Distinguish executed tests from UP-TO-DATE or cached results.
 
 The debug assembly also compiles the intentionally unavailable JNI-stub boundary for `arm64-v8a`, `armeabi-v7a`, and `x86_64`. That is an ABI packaging and fail-closed capability check, not a native data-plane or traffic test.
 
@@ -39,6 +43,63 @@ For a network-affecting change, record:
 
 Use the Compatibility report issue form for a shareable record.
 
+## Feasibility and capability evidence categories
+
+Use a per-run record in [Experiments](EXPERIMENTS.md) with hypothesis, exact
+commit, device, Android/kernel, SoC/OEM, network, procedure, literal redacted
+output, conclusion and verification scope. The proposed experiments are unrun.
+
+| Category | What it can establish | What it cannot establish alone |
+|---|---|---|
+| Source/configuration inspection | Stub behavior, configured SDK/ABI, contracts | Executed runtime or physical support |
+| Build/JVM/static checks | Packaging and tested reference/contract behavior | Forwarding, real-engine lifecycle or latency benefit |
+| Emulator/instrumentation execution | Specific API/lifecycle behavior in that environment | Physical modem/OEM/carrier behavior |
+| Feasibility harness | Candidate mechanism behavior on a stated protected remote socket | Integrated TUN forwarding or production readiness |
+| Runtime capability probe | Actual option/API status, errno, readback, struct length/fields | Effective window control or bufferbloat improvement |
+| Physical forwarding/integrity | Stated TCP/UDP/DNS/IP-family correctness and recovery | Shaping efficacy or every device feature |
+| Physical control/autorate efficacy | Repeated delay/load/throughput results for a feature and conditions | Universal device/carrier or hotspot support |
+
+Before expensive integration, F-01/F-02 must distinguish option acceptance,
+transport effect and benefit on the **protected Android/Linux socket**. Compare
+baseline, receive-buffer/read cadence, and clamp variants; record TCP window
+scaling/autotuning effects, stalls/zero-window recovery and independent timing.
+TCP_INFO fields must be length-checked and their meaning validated; an RTT field
+must not be assumed to measure downlink queue delay. Repeat on physical hardware.
+
+Capability tests must cover unknown, unavailable, malformed/truncated, stale and
+successful probe results; permission/option failures; missing optional features;
+and conservative fallback without OEM profiles. Mandatory protection/forwarding
+failure must prevent interception. Optional failure must disable only the optional
+feature where safe forwarding is proven. A model name or ABI bit is not a probe.
+
+Stage 3's future directional configuration/runtime tests must prove that upload
+works without an available download controller or positive download limit;
+download-control settings require verified runtime capability; bidirectional mode
+requires both supported directions; and loss of optional download capability
+preserves independently proven upload where safe. UI tests must distinguish
+configured download caps from effective control. Current source implements none
+of this directional gating and still requires both positive limits.
+
+TCP upload tests must preserve every accepted byte under partial writes, EAGAIN,
+slow readers, rate changes, half-close, cancellation and concurrent flows. Record
+userspace/kernel buffer bounds and fairness. Any drop/ECN AQM test must identify
+the packet queue, ACK/acceptance boundary, retransmission owner and loss recovery;
+never apply packet-drop assertions to accepted stream chunks.
+
+Autorate tests must compare unshaped, static and adaptive runs under changing
+capacity, stale/failed probes, idle and handover. Record independent delay/load,
+chosen limits separately from throughput, settling/oscillation and measurement
+cost. Feeding already-shaped throughput back as capacity is not valid evidence.
+
+Stage 3's internal IPv4 upload/measurement/autorate experiments assess the primary
+value before significant full dual-stack integration. Stage 2 forwarding and
+lifecycle safeguards remain prerequisites; test IPv6 bypass explicitly in these
+internal builds. Stage 4 then verifies dual-stack/IPv6-only forwarding, DNS A/AAAA,
+MTU/error behavior, network transitions and shaping/measurement across IP families.
+IPv6 is mandatory before broad whole-device support or public/default-route
+release claims, even for upload-only scope. Bypass is not IPv6 shaping support,
+and moving Stage 4 after internal upload experiments never waives the release gate.
+
 ## Public-release gate
 
 No tagged public release is ready until each item below has evidence on the [compatibility matrix](COMPATIBILITY.md):
@@ -52,6 +113,8 @@ No tagged public release is ready until each item below has evidence on the [com
 | Mobility | Wi-Fi/cellular and default-network transitions recover without silently losing traffic |
 | Background | At least 30 minutes of screen-off operation without an unexpected shutdown or sustained leak |
 | Bufferbloat result | Repeatable shaper-off/on tests at different times of day show measured loaded-latency improvement with acceptable throughput retention |
+| Optional TCP download | If claimed, protected-socket probes plus physical effect/benefit evidence and safe unavailable-feature behavior |
+| Adaptive autorate | If claimed, independent delay/load feedback, bounded/stable response and stale/failed-probe fallback evidence |
 | Privacy | No project-operated endpoint, analytics SDK, payload decryption, or unintended diagnostic upload is present |
 
 ## Validation methodology
@@ -65,6 +128,16 @@ Before a result can be called a bufferbloat improvement:
 5. Compare equivalent network conditions as closely as possible.
 
 Do not grade or market a result when the VPN state, flow path, or latency method is unknown. The current service does not claim raw-ICMP support; a future measurement method must state exactly what it measures.
+
+## Documentation-only validation
+
+Review every canonical document and report updated/reviewed-no-change reasons,
+new files, contradictions and remaining gates. Run `git diff --check`; verify
+relative Markdown destinations/fragments and new external primary-source links.
+Print commands and literal counts/errors, including blocked or unreachable URLs;
+an HTTP response alone does not establish a policy claim. Confirm the commit
+contains only intended documentation and no app/native/build changes. Run the
+required source checks above and report cached versus executed work honestly.
 
 ## When to stop testing
 

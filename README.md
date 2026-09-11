@@ -10,17 +10,24 @@ Bufferbloat Shaper explores whether an Android `VpnService` can reduce added lat
 - A versioned JNI boundary packaged for `arm64-v8a`, `armeabi-v7a`, and `x86_64`. The checked-in native implementation is deliberately an unavailable stub and never relays a packet.
 - Pure Kotlin reference tests for TokenBucket, CoDel-style AQM, and fair-queue behavior, plus calibration, validation, notification, and statistics scaffolding. They are not connected to a traffic path.
 
-The implementation is **not a completed shaper**. The checked-in build intentionally does not activate a VPN route: it reports that a verified native packet engine is unavailable and leaves the device on its ordinary network. The unsafe hand-written Kotlin packet relay was removed from the shipped module rather than retained as an activation fallback. IPv6 forwarding, live metrics, calibration, and validation are incomplete. Read [Limitations](docs/LIMITATIONS.md) before installing or testing it.
+The implementation is **not a completed shaper**. The checked-in build intentionally does not activate a VPN route: valid settings reach the unavailable native-engine check; invalid settings fail validation first. Both leave the device on its ordinary network. The unsafe hand-written Kotlin packet relay was removed from the shipped module rather than retained as an activation fallback. IPv6 forwarding, live metrics, calibration, and validation are incomplete. Read [Limitations](docs/LIMITATIONS.md) before installing or testing it.
 
 ## Product boundaries
 
 - No project-operated relay, telemetry service, traffic resale, TLS interception, or payload decryption.
 - No ability to force 5G, select a cellular band, choose NSA/SA, or enable carrier aggregation.
-- TCP download control is a planned capability; QUIC/UDP download shaping is not a goal.
+- TCP download control on protected remote-facing sockets is experimental and
+  unproven; QUIC/UDP download shaping is not a goal. IPv6 must be verified before
+  broad whole-device claims; hotspot/tethering support is not guaranteed.
 - An unavailable native engine is reported visibly before a VPN route is created. A working engine still has to prove health/failover behavior on devices.
 
 ## Documentation
 
+- [Current session context and documentation hierarchy](docs/PROJECT_CONTEXT.md)
+- [Current design decisions and rationale](docs/DESIGN_DECISIONS.md)
+- [Engineering experiments and literal evidence records](docs/EXPERIMENTS.md)
+- [Dated Google Play/Android release requirements](docs/PLAY_COMPLIANCE.md)
+- [Mandatory repository work and documentation protocol](AGENTS.md)
 - [Architecture and current implementation status](docs/ARCHITECTURE.md)
 - [Known limitations and non-goals](docs/LIMITATIONS.md)
 - [Compatibility and field-test matrix](docs/COMPATIBILITY.md)
@@ -29,7 +36,7 @@ The implementation is **not a completed shaper**. The checked-in build intention
 - [Privacy notice](PRIVACY.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security reporting](SECURITY.md)
-- [Original technical/product plan](mobile-bufferbloat-shaper-plan.md)
+- [Superseded historical technical/product plan](mobile-bufferbloat-shaper-plan.md)
 - [Current roadmap and release gates](docs/ROADMAP.md)
 
 ## Build from source
@@ -42,7 +49,14 @@ See [Source Build](docs/SOURCE_BUILD.md) for prerequisites and commands. The sho
 .\gradlew.bat :app:assembleDebug
 ```
 
-Use JDK 21, Android SDK Platform 35, Android NDK r28c, and CMake 3.22.1. The Gradle project now avoids a machine-specific JDK path; see [Source Build](docs/SOURCE_BUILD.md) for the complete setup.
+Use JDK 21, Android SDK Platform 35, and CMake 3.22.1. NDK r28c
+(`28.2.13676358`) is the intended/recommended native toolchain and is installed
+by CI, but `app/build.gradle.kts` does not yet pin `ndkVersion`. Local
+Gradle/CMake selection can differ: the recorded local build selected
+`27.0.12077973`. Installing r28c does not prove Gradle selected it. A later build
+implementation task must pin and verify the actual NDK; this documentation PR
+does not change Gradle. See [Source Build](docs/SOURCE_BUILD.md) for setup and
+selection verification.
 
 ## Contributing and reporting
 

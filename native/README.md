@@ -80,9 +80,9 @@ The required mask includes safe IPv4 UDP forwarding: QUIC/UDP **download
 shaping** remains out of scope, but an IPv4 default VPN route must still carry
 those packets safely or not be enabled.
 
-The array layouts used by the bridge are deliberately documented here so the
-future Kotlin adapter can turn them into typed runtime-state models without
-reflecting private native fields:
+The array layouts used by the bridge are documented here for the existing typed
+Kotlin adapter and any future real-engine implementation, without reflecting
+private native fields:
 
 | Method | Array values, in order |
 | --- | --- |
@@ -99,6 +99,12 @@ event may include addresses, ports, DNS names, package names, or payload data.
 The project accepts only the release ABIs `arm64-v8a`, `armeabi-v7a`, and
 `x86_64`, with API 26 or newer. From PowerShell, use an output directory outside
 the repository:
+
+This standalone CMake example explicitly selects the intended/recommended r28c
+toolchain. It does not pin the app's Gradle `ndkVersion`: CI installs r28c, but
+local Gradle/CMake selection can differ, and the recorded Gradle build selected
+27.0.12077973. Installation is not selection evidence. A later implementation/build
+task must pin and verify the actual NDK; see [Source Build](../docs/SOURCE_BUILD.md).
 
 ```powershell
 $ndk = "$env:ANDROID_SDK_ROOT\\ndk\\28.2.13676358"
@@ -118,23 +124,38 @@ engine or traffic verification.
 
 ## Replacing the stub
 
+First pass the feasibility stage in [Roadmap](../docs/ROADMAP.md), using the
+protected remote-facing socket experiments in [Experiments](../docs/EXPERIMENTS.md).
+That evidence precedes expensive engine integration. Follow
+[Architecture](../docs/ARCHITECTURE.md) and [Design Decisions](../docs/DESIGN_DECISIONS.md):
+the gVisor endpoint owns app-facing TCP; a **separate protected Android/Linux
+socket** owns Internet-facing TCP, including the receive window seen by the
+server. TCP_WINDOW_CLAMP/TCP_INFO remain experimental, absent from this stub.
+Upload uses bounded buffers, paced fair writes and backpressure; never discard
+accepted stream bytes. Packet AQM needs valid packet/retransmission ownership.
+
 Do not flip `BUFFERBLOAT_WITH_GVISOR` on: CMake intentionally fails because no
 real engine has been reviewed or vendored. A production migration must:
 
 1. Pin and audit the upstream source and licenses, including its Go version and
    Android cross-compilation path.
-2. Implement this C ABI with a real userspace netstack that owns TCP state,
-   safe IPv4 TCP and UDP forwarding, retransmission, ordering, teardown, and
-   receive-window accounting. IPv6 remains Android fall-through traffic until
-   a separately tested dual-stack path is ready.
+2. Implement ordinary safe IPv4 TCP and UDP forwarding before shaping. The
+   userspace stack owns app-facing state, retransmission, ordering, teardown
+   and windows; the protected OS TCP socket owns those on the remote-facing leg.
+   Follow the roadmap: internal upload/autorate experiments in Stage 3 precede
+   full dual-stack/DNS/transition correctness in Stage 4. IPv6 remains mandatory
+   before broad whole-device support or public/default-route release claims;
+   allow Android IPv6 bypass in internal builds until dual-stack tests pass.
 3. Make the implementation duplicate the borrowed TUN FD, invoke the supplied
    socket-protection callback before every direct socket connects, copy ABI
    input records synchronously, publish only aggregate/redacted metrics, and
    provide deterministic stop/join behavior.
 4. Replace the unavailable stub with a reviewed adapter while preserving the
    Kotlin/Gradle ABI contract, required feature bits, and release ABI packaging.
-5. Prove the real engine on all three ABIs with tests and real-device traffic before routing
-   any production traffic through it.
+5. Implement runtime probes for optional socket features; static ABI bits alone
+   do not establish availability or effectiveness. Prove the real engine on all
+   three ABIs with tests and real-device traffic before a separately reviewed
+   change enables default routes. OEM tuning comes after common correctness.
 
 Until those conditions are met, this native directory is an integration seam,
 not a functioning packet engine.
