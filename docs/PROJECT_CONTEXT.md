@@ -3,7 +3,9 @@
 Snapshot: 2026-09-11. This concise handoff describes the documentation rebaseline
 on `codex/docs-rebaseline`, based on main implementation commit
 `7cb9289147c519ca42fee1603fceeda2587cf447`. No app, native, Gradle, or CI behavior
-changes in this rebaseline. Refresh this file after engineering work.
+changes in this rebaseline. The final correction pass starts from PR #3 head
+`9c90027e81ed8f5f5e2fd18938a2376eef8a85df` on the same branch. Refresh this file
+after engineering work.
 
 ## Repository and release state
 
@@ -13,16 +15,26 @@ changes in this rebaseline. Refresh this file after engineering work.
 - [PR #1: Clean repository hygiene and track AGENTS.md](https://github.com/Roojool/5G-Bufferbloat-App/pull/1)
   and [PR #2: Add AI project handoff and future-phase prompt guide](https://github.com/Roojool/5G-Bufferbloat-App/pull/2)
   were open, based on main, with successful CI. Neither is included in this
-  branch. AGENTS.md was absent on main: this rebaseline adds it using the
-  proposed rules from PR #1 plus the owner's new protocol. Reconcile that overlap
-  during review; PR #2's phase sequence must be reconciled before adoption.
+  branch; the final correction pass reconfirmed both OPEN with no merge commit.
+  PR #3's AGENTS.md **supersedes** the version proposed in PR #1. PR #1's useful
+  `.gitignore` hygiene should later be recreated as a separate small PR based on
+  the new main after this rebaseline merges; do not merge the old AGENTS proposal.
+  PR #2's AI_PROJECT_HANDOFF sequence is superseded by PROJECT_CONTEXT +
+  DESIGN_DECISIONS + ROADMAP and must not be merged unchanged. This task does not
+  modify, close or merge either PR.
+- [PR #3](https://github.com/Roojool/5G-Bufferbloat-App/pull/3) remains open on
+  `codex/docs-rebaseline`, based directly on main. Its incoming `9c90027` head
+  had successful push/PR CI and still required review. The correction commit and
+  its fresh checks belong to this same PR; none of its docs is on main yet.
 - [Main CI at the implementation baseline](https://github.com/Roojool/5G-Bufferbloat-App/actions/runs/33964804525)
   succeeded. CI builds the debug app and instrumentation APK, runs JVM tests and
   lint; it does not execute physical network tests.
-- The rebaseline's local four-task CI-equivalent check reported `BUILD SUCCESSFUL
+- The initial rebaseline's local four-task CI-equivalent check reported `BUILD SUCCESSFUL
   in 23s`, `82 actionable tasks: 7 executed, 75 up-to-date`. App/instrumentation
   assembly and JVM tests were UP-TO-DATE; no device tests ran. An SDK XML version
-  mismatch warning was emitted. Full command/output accompanies the PR.
+  mismatch warning was emitted. Its PR CI executed all 82 tasks successfully.
+  These are earlier results, not the correction pass's fresh validation; dated
+  command/output for each pass accompanies the PR.
 - Source-only, unreleased prototype. `versionName = "1.0.0"` is build metadata,
   not a release. No APK/AAB distribution gate has passed. Main requires the
   `Build, unit test, and lint` check, an approving review, and no force-push.
@@ -74,10 +86,19 @@ app-facing receive window does not set the server-facing window.
 TCP upload uses bounded buffers, pacing, fair scheduling and backpressure.
 Accepted stream bytes must be preserved; packet AQM needs explicit packet and
 retransmission ownership. Adaptive delay/load autorate is preferred, with static
-percentile/headroom settings only as a possible bounded seed/fallback. IPv6
-precedes broad whole-device claims. Optional features follow runtime probes;
+percentile/headroom settings only as a possible bounded seed/fallback. Stage 3
+tests the primary upload-bufferbloat value internally before Stage 4's full
+dual-stack/DNS/transition integration. IPv6 remains mandatory before broad
+whole-device support or public/default-route release claims. Optional features follow runtime probes;
 OEM profiles may optimize performance only after universal correctness.
 See [Architecture](ARCHITECTURE.md) and [Design Decisions](DESIGN_DECISIONS.md).
+
+Future configuration/runtime state must track each direction independently:
+proven upload shaping must work when TCP download control is unavailable;
+download settings require verified runtime capability; bidirectional mode needs
+both directions supported. Configured download limits are not evidence of
+effective control. This requires later code: today's validation requires both
+positive limits and implements neither directional capability gating nor shaping.
 
 ## Next engineering gate and experiments
 
@@ -91,9 +112,15 @@ can narrow the product to proven upload capabilities; it cannot justify a claim.
 
 [Experiments](EXPERIMENTS.md) lists proposed F-01 (remote TCP receive control),
 F-02 (TCP_INFO observability), F-03 (stream pacing/backpressure), F-04 (adaptive
-autorate), and F-05 (early dual-stack forwarding). All are unrun/unverified.
-Later gates require real forwarding before shaping, dual-stack evidence, and
-the full [Testing](TESTING.md)/[Compatibility](COMPATIBILITY.md) release matrix.
+autorate), and F-05 (dual-stack forwarding). All are unrun/unverified.
+After Stage 1, Stage 2 establishes dependencies and real unshaped IPv4 TCP/UDP
+forwarding; Stage 3 proves internal upload shaping/measurement/adaptive autorate;
+Stage 4 establishes IPv6/dual-stack, DNS and network-transition correctness;
+Stage 5 adds optional protected-socket TCP download control; Stage 6 requires full
+validation/release evidence and separate default activation review. Stage 7 tunes
+OEM/SoC/model performance, and Stage 8 considers Radio Advisor/mapping. Internal
+IPv4 upload experiments do not waive Stage 4 or the full
+[Testing](TESTING.md)/[Compatibility](COMPATIBILITY.md) release matrix.
 
 ## Current SDK and toolchain
 
@@ -104,7 +131,7 @@ the full [Testing](TESTING.md)/[Compatibility](COMPATIBILITY.md) release matrix.
 | Kotlin / Compose BOM | 2.1.0 / 2024.12.01 |
 | Build JDK / bytecode | JDK 21 in CI and build instructions; Java/Kotlin target 17 |
 | Native | CMake 3.22.1 selected by Gradle; C++17; three ABIs above |
-| NDK | CI installs r28c (28.2.13676358); app Gradle does **not** pin ndkVersion. This local check's three CMake caches selected 27.0.12077973; CI installation is not proof of selection |
+| NDK | Intended/recommended: r28c (28.2.13676358), installed by CI. `app/build.gradle.kts` does **not** pin `ndkVersion`; local Gradle/CMake selection can differ. The recorded local build selected 27.0.12077973 on all three ABIs. Installing r28c does not prove selection; a later implementation/build task must pin and verify the actual NDK |
 | Go / gVisor | Neither pinned nor integrated; enabling BUFFERBLOAT_WITH_GVISOR intentionally fails configuration |
 
 Policy requirements are separate from this configuration. See
@@ -123,6 +150,7 @@ the future implementation/release review needed; this PR does not upgrade SDKs.
 4. SOURCE_BUILD, PRIVACY, SECURITY, CONTRIBUTING and PLAY_COMPLIANCE own their
    respective build, data, reporting, contribution and dated policy details.
    RADIO_OPTIMIZATION, if created later, must remain subordinate to these bounds.
-5. mobile-bufferbloat-shaper-plan.md is superseded history. The unmerged
-   AI_PROJECT_HANDOFF proposal is not canonical; reconcile it with this hierarchy
-   before any future merge. This snapshot never makes a pending PR part of main.
+5. mobile-bufferbloat-shaper-plan.md is superseded history. PR #2's unmerged
+   AI_PROJECT_HANDOFF sequence is superseded by PROJECT_CONTEXT,
+   DESIGN_DECISIONS and ROADMAP; do not merge it unchanged. This snapshot never
+   makes a pending PR part of main.

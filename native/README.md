@@ -100,6 +100,12 @@ The project accepts only the release ABIs `arm64-v8a`, `armeabi-v7a`, and
 `x86_64`, with API 26 or newer. From PowerShell, use an output directory outside
 the repository:
 
+This standalone CMake example explicitly selects the intended/recommended r28c
+toolchain. It does not pin the app's Gradle `ndkVersion`: CI installs r28c, but
+local Gradle/CMake selection can differ, and the recorded Gradle build selected
+27.0.12077973. Installation is not selection evidence. A later implementation/build
+task must pin and verify the actual NDK; see [Source Build](../docs/SOURCE_BUILD.md).
+
 ```powershell
 $ndk = "$env:ANDROID_SDK_ROOT\\ndk\\28.2.13676358"
 $cmake = "$env:ANDROID_SDK_ROOT\\cmake\\3.22.1\\bin\\cmake.exe"
@@ -136,8 +142,10 @@ real engine has been reviewed or vendored. A production migration must:
 2. Implement ordinary safe IPv4 TCP and UDP forwarding before shaping. The
    userspace stack owns app-facing state, retransmission, ordering, teardown
    and windows; the protected OS TCP socket owns those on the remote-facing leg.
-   Bring IPv6 into early correctness work before broad whole-device claims;
-   allow Android IPv6 bypass until the dual-stack path passes tests.
+   Follow the roadmap: internal upload/autorate experiments in Stage 3 precede
+   full dual-stack/DNS/transition correctness in Stage 4. IPv6 remains mandatory
+   before broad whole-device support or public/default-route release claims;
+   allow Android IPv6 bypass in internal builds until dual-stack tests pass.
 3. Make the implementation duplicate the borrowed TUN FD, invoke the supplied
    socket-protection callback before every direct socket connects, copy ABI
    input records synchronously, publish only aggregate/redacted metrics, and

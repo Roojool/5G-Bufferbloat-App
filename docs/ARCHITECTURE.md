@@ -67,9 +67,12 @@ ordered bytes without decrypting application TLS. TCP termination is not TLS
 termination. Changing only gVisor's app-facing receive window limits app upload
 into that endpoint; it does not directly advertise a window to the server.
 
-Prove ordinary IPv4 TCP and UDP forwarding before shaping. Bring IPv6 into the
-early correctness stage, before broad whole-device claims; until it passes,
-Android must allow IPv6 to bypass an internal IPv4-only route. Kotlin retains
+Prove ordinary unshaped IPv4 TCP/UDP forwarding in Stage 2, then test internal
+upload shaping, measurement and adaptive autorate in Stage 3 to assess the
+primary upload-bufferbloat value before full dual-stack integration. Stage 4
+completes IPv6/dual-stack, DNS and network-transition correctness. IPv6 remains
+mandatory before broad whole-device support or public/default-route release
+claims; until it passes, allow IPv6 bypass in internal IPv4-only builds. Kotlin retains
 lifecycle, configuration, UI, accessibility and local diagnostics. The three-ABI
 JNI stub establishes a buildable contract, not a real stack or physical lifecycle
 proof. gVisor integration remains planned.
@@ -129,8 +132,23 @@ controls and observations. Runtime probes on the actual Android/kernel/socket
 determine optional availability; unknown or failed probes disable the feature
 with a reason. Successful probes still need physical efficacy evidence. The
 existing ABI feature mask is a prerequisite contract, not this framework.
-Current configuration still requires positive upload and download limits;
-optional download settings/gates need later implementation.
+Current configuration still requires positive upload and download limits.
+The following **future requirement** needs a separate implementation change:
+
+- Configuration and runtime state must track upload and TCP download capability,
+  requested limits, effective enablement and unavailable reasons independently.
+- Independently proven upload shaping must be available when optional TCP
+  download control is unavailable, without requiring a positive download limit.
+- Expose/enable a download-control setting only when its runtime capability is
+  verified; support bidirectional mode when both directions are supported.
+- A failed or stale optional download capability must disable that control while
+  preserving independently proven upload where forwarding remains safe.
+- The UI must never present a configured download limit as proof of effective
+  download control. A saved request and measured/verified behavior are distinct.
+
+Stage 3 implements this directional model for internal upload experiments;
+Stage 5 integrates optional protected-socket download control. Neither feature
+nor the revised configuration model exists in the checked-in stub.
 
 Universal correctness comes before OEM tuning. Profiles may optimize buffer,
 scheduling, battery or thermal budgets within proven invariants; they must not

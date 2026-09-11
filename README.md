@@ -49,7 +49,14 @@ See [Source Build](docs/SOURCE_BUILD.md) for prerequisites and commands. The sho
 .\gradlew.bat :app:assembleDebug
 ```
 
-Use JDK 21, Android SDK Platform 35, Android NDK r28c, and CMake 3.22.1. The Gradle project now avoids a machine-specific JDK path; see [Source Build](docs/SOURCE_BUILD.md) for the complete setup.
+Use JDK 21, Android SDK Platform 35, and CMake 3.22.1. NDK r28c
+(`28.2.13676358`) is the intended/recommended native toolchain and is installed
+by CI, but `app/build.gradle.kts` does not yet pin `ndkVersion`. Local
+Gradle/CMake selection can differ: the recorded local build selected
+`27.0.12077973`. Installing r28c does not prove Gradle selected it. A later build
+implementation task must pin and verify the actual NDK; this documentation PR
+does not change Gradle. See [Source Build](docs/SOURCE_BUILD.md) for setup and
+selection verification.
 
 ## Contributing and reporting
 

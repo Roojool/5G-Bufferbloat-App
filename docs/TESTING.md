@@ -72,6 +72,14 @@ and conservative fallback without OEM profiles. Mandatory protection/forwarding
 failure must prevent interception. Optional failure must disable only the optional
 feature where safe forwarding is proven. A model name or ABI bit is not a probe.
 
+Stage 3's future directional configuration/runtime tests must prove that upload
+works without an available download controller or positive download limit;
+download-control settings require verified runtime capability; bidirectional mode
+requires both supported directions; and loss of optional download capability
+preserves independently proven upload where safe. UI tests must distinguish
+configured download caps from effective control. Current source implements none
+of this directional gating and still requires both positive limits.
+
 TCP upload tests must preserve every accepted byte under partial writes, EAGAIN,
 slow readers, rate changes, half-close, cancellation and concurrent flows. Record
 userspace/kernel buffer bounds and fairness. Any drop/ECN AQM test must identify
@@ -83,9 +91,14 @@ capacity, stale/failed probes, idle and handover. Record independent delay/load,
 chosen limits separately from throughput, settling/oscillation and measurement
 cost. Feeding already-shaped throughput back as capacity is not valid evidence.
 
-IPv6 correctness is an early gate before broad whole-device claims. Test IPv6
-bypass explicitly in earlier internal IPv4-only builds, then dual-stack/IPv6-only
-forwarding, DNS A/AAAA and MTU/error behavior. Bypass is not IPv6 shaping support.
+Stage 3's internal IPv4 upload/measurement/autorate experiments assess the primary
+value before significant full dual-stack integration. Stage 2 forwarding and
+lifecycle safeguards remain prerequisites; test IPv6 bypass explicitly in these
+internal builds. Stage 4 then verifies dual-stack/IPv6-only forwarding, DNS A/AAAA,
+MTU/error behavior, network transitions and shaping/measurement across IP families.
+IPv6 is mandatory before broad whole-device support or public/default-route
+release claims, even for upload-only scope. Bypass is not IPv6 shaping support,
+and moving Stage 4 after internal upload experiments never waives the release gate.
 
 ## Public-release gate
 

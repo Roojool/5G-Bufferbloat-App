@@ -100,7 +100,7 @@ identify queue units, ACK/acceptance boundary, sender-retained retransmission
 copy and recovery evidence. No drop operation on accepted stream chunks.
 
 **Commit/device/Android/SoC/OEM/network:** not assigned. **Raw/redacted result:**
-none; not run. **Conclusion:** none. **Gate:** feasibility then Stage 4, D-07–D-09.
+none; not run. **Conclusion:** none. **Gate:** feasibility then Stage 3, D-07–D-09.
 
 ### F-04 — adaptive delay/load autorate
 
@@ -116,18 +116,21 @@ time, oscillation, fairness, data/battery cost and safe fallback. Simulation may
 screen a design; physical tests are required for benefit claims.
 
 **Commit/device/Android/SoC/OEM/network:** not assigned. **Raw/redacted result:**
-none; not run. **Conclusion:** none. **Gate:** Stage 4, D-10.
+none; not run. **Conclusion:** none. **Gate:** Stage 3, D-10.
 
-### F-05 — early dual-stack forwarding and capability fallback
+### F-05 — dual-stack forwarding and capability fallback
 
 **Hypothesis:** the future engine can preserve IPv4/IPv6 TCP, UDP/QUIC, resolver
 policy and safe recovery without optional socket features or OEM profiles.
 
-**Planned procedure:** after real forwarding exists, test dual-stack and
+**Planned procedure:** after Stage 3's internal upload experiments, test dual-stack and
 IPv6-only destinations, DNS A/AAAA, MTU/fragmentation/error behavior, transitions,
 missing optional probes, failed protection and stop/join. Verify IPv6 bypass
 explicitly in earlier IPv4-only internal builds; bypass is not shaped support.
-Record transfer checksums and literal failure/recovery observations.
+Record transfer checksums and literal failure/recovery observations. Extend upload
+shaping/measurement evidence to the full IP-family scope. This Stage 4 evidence
+is mandatory before broad whole-device support or public/default-route release
+claims, including for upload-only scope; no IPv4-only experiment waives it.
 
 **Commit/device/Android/SoC/OEM/network:** not assigned. **Raw/redacted result:**
-none; not run. **Conclusion:** none. **Gate:** Stage 3, D-11–D-13.
+none; not run. **Conclusion:** none. **Gate:** Stage 4, D-11–D-13.

@@ -18,12 +18,28 @@ affected evidence, and review.
 | D-08 | Never discard arbitrary already-accepted TCP stream bytes. | Once a TCP endpoint has acknowledged data, the original sender may no longer retain it. The bridge must preserve order and every accepted byte through forwarding or surface an explicit connection failure; silent byte removal corrupts the stream. |
 | D-09 | Packet-dropping AQM is allowed only with correct packet/retransmission ownership. | A real packet queue before receiver acceptance, or a stack-owned packet queue whose sender retains retransmittable data, can be a candidate. A queue of bytes read from TCP is not such a queue. UDP datagram drops need an explicit loss policy and tests; QUIC forwarding cannot be disabled because download shaping is absent. |
 | D-10 | Prefer adaptive delay/load autorate over only static percentile × headroom. | Cellular capacity changes faster than a fixed historical cap can track. Measure independent delay and offered load, bound adjustments, detect stale/failed probes and avoid learning capacity from self-limited throughput. Percentile/headroom may seed or bound a fallback; no controller is implemented. |
-| D-11 | IPv6 must arrive before broad whole-device claims. | IPv4-only capture leaves a material traffic family outside control. Bring dual-stack correctness early, prove DNS A/AAAA, IPv6-only destinations, MTU and transitions. Until then explicitly permit IPv6 bypass and describe the scope honestly. |
+| D-11 | IPv6 is mandatory before broad whole-device support or public/default-route release claims. | Stage 3 tests the primary upload-bufferbloat value internally before full dual-stack integration in Stage 4. IPv4-only capture leaves a traffic family outside control; Stage 4 must prove IPv6, DNS A/AAAA, MTU and transitions before release, even for upload-only scope. Earlier internal builds explicitly permit IPv6 bypass; this ordering never makes IPv6 optional for release. |
 | D-12 | OEM/device profiles optimize performance, not correctness. | Universal ownership, forwarding and safe-failure invariants cannot depend on a model-name allowlist. Tune resource/battery/performance budgets only after the common path works. |
 | D-13 | Runtime capability probes determine optional feature availability. | Probe the actual socket/platform and keep unknown, unavailable and verified behavior distinct. Static ABI feature bits cover engine contracts; they do not prove optional kernel behavior. Failure disables the optional feature with a reason; required-path failure prevents route activation. |
 | D-14 | The stock app does not force LTE/NR bands. | Universal stock operation must not rely on privileged modem interfaces, root, engineering menus or carrier changes. It also does not force NSA/SA or carrier aggregation. |
 | D-15 | A future Radio Advisor may observe and recommend conditions. | Later, user-authorized public radio signals could support local advice or mapping where available. Handle permission denial/missing/stale data and decide consent, storage and location privacy first. No advisor or map is implemented. |
 | D-16 | Exact band locking research belongs outside the universal stock app. | If ever separately authorized, isolate device-specific privileged experiments in a separate research scope; do not make them a stock-app dependency, hidden toggle, or compatibility promise. |
+
+## Directional configuration requirement (D-13 implementation consequence)
+
+Future configuration and runtime state must represent upload and TCP download
+capabilities independently, including requested settings, effective enablement
+and reasons for unavailability. Independently proven upload shaping must work
+when TCP download control is unavailable, without requiring a positive download
+limit. Only expose/enable a download-control setting when its runtime capability
+is verified. Support bidirectional mode when both directions are supported;
+losing optional download capability must not prevent independently proven upload
+where forwarding remains safe. Never present a configured download cap as proof
+that download control works.
+
+Stage 3 establishes this model for internal upload experiments; Stage 5 may add
+verified protected-socket download control. Current source still validates both
+limits as positive. This requirement is planned, not implemented by this PR.
 
 ## Technical interpretation and references
 

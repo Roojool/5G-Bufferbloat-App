@@ -9,7 +9,8 @@ This is a source-only prototype. Building an APK does **not** make it a supporte
 - Git
 - JDK 21 (Android Studio's bundled JBR 21 or a Temurin/OpenJDK 21 installation)
 - Android SDK Platform 35 and the matching platform/build tools accepted by Android Gradle Plugin
-- Android NDK r28c (`28.2.13676358`) and CMake 3.22.1 for the checked-in JNI-stub build
+- Android NDK r28c (`28.2.13676358`), the intended/recommended native toolchain
+  installed by CI, and CMake 3.22.1; see the selection distinction below
 - Android SDK command-line tools or Android Studio
 - For device installation: Android Debug Bridge (`adb`) and a device with developer options enabled
 
@@ -22,10 +23,14 @@ implementation task. No maximum runtime API is configured.
 The wrapper pins Gradle 8.9 and its checksum; the version catalog selects AGP
 8.7.3 and Kotlin 2.1.0. Java/Kotlin bytecode targets 17, separate from the JDK 21
 build runtime. Gradle selects CMake 3.22.1 and builds C++17 for arm64-v8a,
-armeabi-v7a and x86_64. CI installs NDK r28c, but `app/build.gradle.kts` does
-**not** set `ndkVersion`; installation is not an explicit Gradle selection pin.
-Record the actual selected NDK from native build output/CMakeCache.txt for
-reproducibility. Pinning it belongs in a separate build implementation change.
+armeabi-v7a and x86_64. CI installs the intended/recommended NDK r28c
+(`28.2.13676358`), but `app/build.gradle.kts` does **not** pin `ndkVersion`.
+Local Gradle/CMake selection can therefore differ; the recorded local build's
+three ABI caches selected `27.0.12077973`. Installing r28c does not prove Gradle
+selected it, locally or in CI. Record the selected NDK from each build's native
+output/CMakeCache.txt rather than inferring it from installed packages.
+A later implementation/build task must pin and verify the actual NDK on local
+and CI builds. This documentation PR does not change Gradle or establish a pin.
 
 ### Windows PowerShell
 

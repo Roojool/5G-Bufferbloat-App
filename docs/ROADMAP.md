@@ -5,7 +5,13 @@ See [Project Context](PROJECT_CONTEXT.md) for the implementation snapshot and
 [Design Decisions](DESIGN_DECISIONS.md) for rationale. Every stage below Phase 0
 is planned/unpassed; documenting it does not implement or verify it.
 
-## Phase 0 — public-source foundation (checked in)
+The order reduces technical risk: first prove the primary upload-bufferbloat
+value with internal IPv4 shaping/autorate experiments, then invest in full
+dual-stack integration. **IPv6 is still mandatory before broad whole-device
+support or public/default-route release claims.** Stage 3 is an internal
+experiment gate, not permission to skip Stage 4 or enable default routes.
+
+## Phase 0 — fail-closed source foundation (checked in)
 
 The app is a fail-closed source prototype: Compose UI, local settings, routing
 preferences, structured manual diagnostics, CI and JNI ABI v2 exist. A deliberately
@@ -14,7 +20,7 @@ invalid settings report ERROR first. Neither path creates a route.
 It carries no traffic. Go/gVisor, socket probes, a real engine and live shaping
 are absent. Algorithm tests and lifecycle scaffolding are not a working shaper.
 
-## Stage 1 — feasibility before expensive engine integration (next)
+## Stage 1 — protected-socket / transport feasibility (next)
 
 1. Design a small stock-Android internal protected-socket harness and define
    falsifiable procedures in [Experiments](EXPERIMENTS.md). Keep the ordinary app
@@ -34,11 +40,12 @@ Absent or negative download evidence keeps that feature disabled. A proven
 upload-only direction may proceed with an explicitly revised scope; never call
 unverified download control solved. A successful socket option is not this gate.
 
-## Stage 2 — dependency foundation and real forwarding before shaping
+## Stage 2 — dependency foundation + real unshaped IPv4 TCP/UDP forwarding
 
 1. Pin/review an Apache-compatible gVisor revision, Go toolchain, transitive
    licenses/notices and reproducible Android build path for all three ABIs.
-   Resolve actual NDK selection and future SDK migration in implementation tasks.
+   Pin and verify actual NDK selection and handle future SDK migration in
+   implementation/build tasks; installing the recommended r28c is not a pin.
    Do not adopt GPL-only or project-proxy-dependent tun2socks code.
 2. Build the internal gate and reuse/audit ABI v2: protect every socket before
    bind/connect/send, copy input records, duplicate the borrowed TUN safely,
@@ -55,26 +62,20 @@ unverified download control solved. A successful socket option is not this gate.
 ordinary builds remain unavailable. No route is enabled merely by flipping the
 existing gVisor CMake option, which intentionally fails today.
 
-## Stage 3 — early dual-stack and universal correctness
-
-- Implement/test IPv6 TCP/UDP, dual-stack/IPv6-only destinations, DNS A/AAAA,
-  MTU and relevant fragmentation/error behavior. Until then internal IPv4-only
-  builds explicitly allow IPv6 bypass and cannot claim whole-device control.
-- Prove socket protection, start/update/stop, stale-generation exclusion,
-  callback join, health failure and watchdog/containment under actual traffic.
-- Verify resolver policy, captive portals, Wi-Fi/cellular/default-network
-  transitions, revocation, resource bounds and screen-off behavior.
-- Missing optional probes or OEM profiles must not break common forwarding.
-
-**Exit:** reviewed dual-stack correctness/lifecycle evidence, before broad
-whole-device claims or OEM performance tuning. No physical gate has passed yet.
-
-## Stage 4 — upload shaping, measurement and adaptive autorate
+## Stage 3 — upload shaping + measurement + adaptive autorate
 
 - Add bounded TCP stream buffering, token-budget pacing, fair scheduling and
   backpressure; prove transfer integrity, partial-write handling and fairness.
   Packet-dropping AQM/ECN requires an explicitly valid queue and loss-recovery
   proof. Never discard already-accepted stream bytes.
+- Implement independent directional configuration and runtime state: enable
+  independently proven upload shaping without requiring a download limit or
+  available TCP download controller. Only expose/enable download-control settings
+  when the runtime capability is verified; support bidirectional mode when both
+  directions are supported. Track requested caps separately from effective
+  enablement and unavailable reasons. A configured download limit is never proof
+  that download control works. Today's both-positive-limits validation must change
+  in a later implementation task; it is unchanged in this documentation PR.
 - Add UDP upload pacing only after safe forwarding is stable, with bounded
   datagrams and a documented loss policy. QUIC/UDP download shaping stays out.
 - Implement independent delay/load measurements and locally persisted per-network
@@ -89,20 +90,49 @@ whole-device claims or OEM performance tuning. No physical gate has passed yet.
   No grade without actual inputs. Apply per-app traffic profiles only after the
   engine enforces them; current routing allow/deny settings are not rate profiles.
 
-## Stage 5 — optional TCP download control
+**Exit:** literal internal upload integrity/fairness/loaded-latency and autorate
+evidence sufficient to assess the primary value proposition. Internal IPv4-only
+builds must have passed Stage 2 forwarding/lifecycle safeguards and allow IPv6
+bypass explicitly. These experiments do not claim whole-device support or permit
+public/default activation; Stage 4 remains mandatory even for upload-only release.
+
+## Stage 4 — IPv6/dual-stack + DNS + network-transition universal correctness
+
+- Implement/test IPv6 TCP/UDP, dual-stack/IPv6-only destinations, DNS A/AAAA,
+  MTU and relevant fragmentation/error behavior. Extend Stage 2's resolver-policy
+  preservation and Stage 3's shaping/measurement checks to the full IP-family scope.
+  Until this passes, internal IPv4-only builds must explicitly allow IPv6 bypass.
+- Extend socket protection, start/update/stop, stale-generation exclusion,
+  callback join, health failure and watchdog/containment proofs across dual-stack
+  traffic. Stage 2 safeguards are prerequisites, not work deferred until here.
+- Verify resolver policy, captive portals, Wi-Fi/cellular/default-network
+  transitions, revocation, resource bounds and screen-off behavior.
+- Missing optional probes or OEM profiles must not break common forwarding or
+  independently proven upload shaping.
+
+**Exit:** reviewed dual-stack/DNS/transition correctness and lifecycle evidence.
+IPv6 is mandatory before broad whole-device support, public/default-route release
+claims or OEM tuning. Moving it after internal upload experiments does not make
+it optional for release. No physical gate has passed yet.
+
+## Stage 5 — optional protected-socket TCP download control
 
 Only after Stage 1 evidence and a reliable data path, integrate the supported
 protected-socket mechanism behind runtime capability and internal experiment
 gates. Revalidate effective remote-window behavior, bounded buffering,
 zero-window recovery, latency and throughput across physical combinations.
 TCP_WINDOW_CLAMP and TCP_INFO remain experimental until those results exist.
-The configuration/UI must support unavailable download control honestly; the
-current requirement for both positive rate limits is not that capability gate.
+Use Stage 3's independent directional configuration/runtime model: enable
+download-control settings only with verified runtime capability, enable
+bidirectional mode only when both directions are supported, and preserve
+independently proven upload shaping when optional TCP download control is
+unsupported or loses capability. The UI must distinguish configured caps from
+effective control. The current both-positive-limits validation is not this model.
 
 Download failure does not authorize UDP dropping, TLS interception or a relay.
 If feasibility fails, revise scope and public claims before pursuing release.
 
-## Stage 6 — release evidence and separate activation review
+## Stage 6 — full validation / release evidence / separate activation review
 
 Meet [Testing](TESTING.md) and [Compatibility](COMPATIBILITY.md) with literal
 results: emulator/ABI checks, Qualcomm and MediaTek across two OEMs, Airtel/Jio/Vi
@@ -111,21 +141,22 @@ where available, Wi-Fi/captive portal, ten start/stop cycles, five checksum-veri
 and repeated loaded-latency/throughput comparisons at multiple times of day.
 Support claims name only tested features and combinations.
 
-Default route activation requires a separate reviewed change after applicable
-correctness and physical gates pass. Debug-only work cannot remove the README
+Default route activation requires a separate reviewed change after Stage 4's
+mandatory IPv6/dual-stack correctness and the applicable physical/release gates
+pass, including for an upload-only feature scope. Debug-only work cannot remove the README
 prototype banner or pretend the ordinary app forwards traffic. A tagged source
 release needs reproducible build evidence and accurate limitations. APK/AAB/Play
 distribution additionally requires signing/distribution work and current
 [Play Compliance](PLAY_COMPLIANCE.md) review, including a separate API migration.
 
-## Stage 7 — measured OEM/device performance tuning
+## Stage 7 — OEM/SoC/model performance tuning
 
 After universal correctness, use measured profiles for CPU, buffer, scheduling,
 battery and thermal budgets. Runtime capabilities still determine optional
 availability; a model allowlist cannot determine correctness. Repeat negative
 and fallback tests with each tuning profile and retain conservative defaults.
 
-## Stage 8 — later Radio Advisor and mapping research
+## Stage 8 — Radio Advisor / mapping research
 
 Observe public radio signals where permission/platform support permits, then
 consider local recommendations or mapping. Decide user consent, location/privacy,
