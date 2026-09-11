@@ -1,12 +1,27 @@
 # Mobile Bufferbloat Shaper — Technical & Product Plan
 
-> **Historical planning record — not the current implementation contract.** This
-> document predates the fail-closed native-engine decision. Read
-> [the current roadmap](docs/ROADMAP.md), [limitations](docs/LIMITATIONS.md),
-> and [architecture](docs/ARCHITECTURE.md) for the source that is actually
-> shipped. In particular, its historical `tun2socks` references are not an
-> approved dependency: this project must not adopt GPL-only or proxy-dependent
-> code for an Apache-2.0, local-only release.
+> **SUPERSEDED DESIGN — HISTORICAL RECORD ONLY. DO NOT IMPLEMENT FROM THIS PLAN.**
+> The active contract is [Architecture](docs/ARCHITECTURE.md) and
+> [Design Decisions](docs/DESIGN_DECISIONS.md); use [Project Context](docs/PROJECT_CONTEXT.md)
+> for checked-in truth and [Roadmap](docs/ROADMAP.md) for the current sequence.
+> This plan's diagrams, efficacy/market claims, phase ordering, radio assumptions
+> and store-policy statements are not verified current requirements or results.
+> The current native engine is unavailable and forwards no traffic.
+>
+> **The illustrative Kotlin queue code below is not production implementation.**
+> It is not a verified CoDel integration and must not be used to drop arbitrary
+> bytes already accepted by a TCP endpoint. The revised design has two TCP
+> connections; the protected Android/Linux socket owns Internet-facing TCP.
+> App-facing gVisor receive-window changes do not directly control the server's
+> download window. TCP download control remains experimental; static percentile
+> × headroom alone is superseded by the adaptive delay/load autorate direction.
+>
+> Historical `tun2socks` references do not approve a dependency. Do not adopt
+> GPL-only or proxy-dependent code for this Apache-2.0 local-only project.
+> Old telemetry language does not authorize telemetry. Verify current policy in
+> [Play Compliance](docs/PLAY_COMPLIANCE.md). The body is retained unchanged as
+> history, including unsupported performance claims and illustrative numbers;
+> none is literal engineering evidence for this repository.
 
 ## 0. The honest starting point
 

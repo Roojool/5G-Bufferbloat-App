@@ -4,7 +4,10 @@ Thank you for helping improve this project. It is a network-sensitive Android pr
 
 ## Before you start
 
-- Read the [architecture](docs/ARCHITECTURE.md), [limitations](docs/LIMITATIONS.md), and [testing guidance](docs/TESTING.md).
+- Follow [AGENTS.md](AGENTS.md): first read it completely, then all canonical
+  documents before changes, and establish branch/commit/worktree, open PRs, CI
+  and actual build/native configuration. Use [Project Context](docs/PROJECT_CONTEXT.md)
+  for the handoff and hierarchy. The mobile plan is superseded history.
 - Check open issues before starting substantial work. Open an issue first for a new data-plane design, a new dependency, privacy-sensitive behavior, or a broad UI change.
 - Do not describe a behavior as working merely because the app compiles. Include the test output or redacted device evidence that supports the claim.
 
@@ -15,6 +18,11 @@ Thank you for helping improve this project. It is a network-sensitive Android pr
 3. Run the relevant checks from [Source Build](docs/SOURCE_BUILD.md): debug assembly, unit tests, and lint at minimum.
 4. For networking changes, provide reproducible device evidence following [Testing](docs/TESTING.md). State the Android version, device/OEM, network type/carrier, and whether the shaper was active.
 5. Open a pull request using the supplied template.
+6. After engineering work, update PROJECT_CONTEXT and any affected design,
+   roadmap, testing, compatibility or disclosure documents. Include a final
+   review of every canonical document with updated/no-change reasons, remaining
+   gates and literal validation/link-check output. Never assume an unmerged PR
+   is part of main; keep experimental and ordinary-user claims distinct.
 
 ## Safety and privacy requirements
 

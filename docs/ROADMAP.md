@@ -1,94 +1,141 @@
 # Current Roadmap and Release Gates
 
-## Current stop point
+This sequence supersedes the historical mobile plan and earlier phase numbering.
+See [Project Context](PROJECT_CONTEXT.md) for the implementation snapshot and
+[Design Decisions](DESIGN_DECISIONS.md) for rationale. Every stage below Phase 0
+is planned/unpassed; documenting it does not implement or verify it.
 
-The checked-in Android app is a **fail-closed source prototype**. Its native
-library packages a deliberately unavailable ABI stub, so a start request shows
-a recoverable unsupported state before Android creates a TUN route. It does not
-currently shape, relay, inspect, or carry device traffic. This is intentional:
-the unsafe hand-written Kotlin relay was removed instead of being kept as a
-fallback TCP/IP stack.
+## Phase 0 — public-source foundation (checked in)
 
-## Phase 0 — public-source foundation (implemented)
+The app is a fail-closed source prototype: Compose UI, local settings, routing
+preferences, structured manual diagnostics, CI and JNI ABI v2 exist. A deliberately
+unavailable three-ABI native stub causes UNSUPPORTED on a valid-config start;
+invalid settings report ERROR first. Neither path creates a route.
+It carries no traffic. Go/gVisor, socket probes, a real engine and live shaping
+are absent. Algorithm tests and lifecycle scaffolding are not a working shaper.
 
-- Apache-2.0 source-only repository, JDK 21 build instructions, wrapper
-  checksum, CI, contribution/security/privacy documents, issue forms, and
-  compatibility/limitations pages.
-- Safe Kotlin/JNI lifecycle boundary for `arm64-v8a`, `armeabi-v7a`, and
-  `x86_64`; unavailable or unhealthy engines must leave normal networking in
-  place.
-- Local profiles, supported Android allow/deny app routing configuration,
-  measured-value-only UI scaffolding, and a user-initiated structured
-  diagnostic export. No telemetry or project-operated network service exists.
+## Stage 1 — feasibility before expensive engine integration (next)
 
-Completion of this phase is **not** evidence that the app works as a shaper.
+1. Design a small stock-Android internal protected-socket harness and define
+   falsifiable procedures in [Experiments](EXPERIMENTS.md). Keep the ordinary app
+   unavailable; a debug APK is not automatically an experimental-route gate.
+2. Test the **remote-facing OS TCP socket**: bounded receive behavior,
+   TCP_WINDOW_CLAMP and TCP_INFO. Record protection, option/errno/readback,
+   actual transport effect, latency/throughput and safe failure on physical
+   devices. Do not infer remote control from an app-facing gVisor window.
+3. Establish bounded stream pacing/backpressure feasibility and identify any
+   valid packet AQM queues before adopting queue algorithms.
+4. Define capability/device framework contracts: mandatory forwarding/lifecycle
+   requirements; optional probes; unknown/unavailable/available outcomes; feature
+   disablement and redacted reasons; evidence scoped by Android/kernel/ABI/network.
 
-## Phase 1 — design and build a real local engine
+**Exit:** reviewed literal feasibility results and a go/narrow/defer decision.
+Absent or negative download evidence keeps that feature disabled. A proven
+upload-only direction may proceed with an explicitly revised scope; never call
+unverified download control solved. A successful socket option is not this gate.
 
-1. Pin an Apache-compatible gVisor Netstack source revision, Go toolchain,
-   dependency licenses/notices, and reproducible Android build process. Do not
-   substitute GPL-only or proxy-dependent `tun2socks` code.
-2. ABI v2 exposes a narrow Android `VpnService.protect(fd)` callback and the
-   bridge uses opaque lifetime-safe session tokens. A real engine must honor
-   and test the callback for every direct socket so it cannot loop back into
-   the VPN, including failed-start and stop/join paths.
-3. Implement safe IPv4 TCP **and UDP forwarding** first: complete TUN-facing
-   TCP state, ordering, teardown, direct protected sockets, bounded queues,
-   health events, aggregate/per-flow metrics, and serialized teardown. UDP
-   forwarding is required even though UDP/QUIC download shaping is not.
-4. Add TokenBucket, bounded fair queueing, and CoDel only where the native
-   stack owns the relevant queue and retransmission semantics. Never drop bytes
-   already accepted by an outer TCP socket.
-5. Prove native start/update/stop, health failure, and TUN ownership on each
-   ABI before enabling any route.
+## Stage 2 — dependency foundation and real forwarding before shaping
 
-## Phase 2 — carefully expand functionality
+1. Pin/review an Apache-compatible gVisor revision, Go toolchain, transitive
+   licenses/notices and reproducible Android build path for all three ABIs.
+   Resolve actual NDK selection and future SDK migration in implementation tasks.
+   Do not adopt GPL-only or project-proxy-dependent tun2socks code.
+2. Build the internal gate and reuse/audit ABI v2: protect every socket before
+   bind/connect/send, copy input records, duplicate the borrowed TUN safely,
+   preserve opaque token/callback lifetime, and prove failed-start stop/join.
+3. Implement ordinary IPv4 TCP **and safe UDP/QUIC forwarding**, unshaped first,
+   with bounded resources, ordered streams, teardown, DNS policy preservation,
+   health/events and measured aggregate/per-flow counters. Two TCP legs own
+   independent state; Android/Linux owns the Internet-facing connection.
+4. Implement runtime capability reporting from actual probes, independently of
+   device names. Required-path failure blocks interception; optional failures
+   leave proven forwarding available without the optional feature.
 
-- IPv6 only after native dual-stack forwarding and A/AAAA behavior pass tests;
-  until then IPv6 must bypass the incomplete local path.
-- Preserve the device DNS policy; do not replace resolvers or log query
-  contents. Surface only redacted DNS failure diagnostics.
-- Add UDP **upload** pacing only after TCP is stable. QUIC/UDP download shaping
-  remains out of scope.
-- Wire native health/events/per-flow metrics into `VpnRuntimeState`; displayed
-  rates must be measured, not configured caps or simulated values.
-- Connect network/default-network, Wi-Fi/cellular, captive-portal, MTU, and
-  optional user-authorized RAT signals to safe pause/recover behavior. Never
-  claim control of 5G, bands, NSA/SA, or carrier aggregation.
+**Exit:** internal forwarding integrity and lifecycle evidence on all ABIs;
+ordinary builds remain unavailable. No route is enabled merely by flipping the
+existing gVisor CMake option, which intentionally fails today.
 
-## Phase 3 — measurement and product features
+## Stage 3 — early dual-stack and universal correctness
 
-- Add opt-in per-app **profiles** only after the engine applies them; the
-  current allow/deny routing setting is not a distinct traffic policy.
-- Add direct independent physical-network probes and locally persisted,
-  per-network rolling samples. Never use traffic already limited by the shaper
-  to learn its own rate cap.
-- Build an honest validation flow: explicit off/on state, independent two-way
-  load, local throughput and queue-delay samples, persistence, and repeatable
-  comparisons. No grade may be shown without those inputs.
-- Add only app-owned, structured diagnostic events to manual export; do not
-  export raw logcat or arbitrary network/error strings.
+- Implement/test IPv6 TCP/UDP, dual-stack/IPv6-only destinations, DNS A/AAAA,
+  MTU and relevant fragmentation/error behavior. Until then internal IPv4-only
+  builds explicitly allow IPv6 bypass and cannot claim whole-device control.
+- Prove socket protection, start/update/stop, stale-generation exclusion,
+  callback join, health failure and watchdog/containment under actual traffic.
+- Verify resolver policy, captive portals, Wi-Fi/cellular/default-network
+  transitions, revocation, resource bounds and screen-off behavior.
+- Missing optional probes or OEM profiles must not break common forwarding.
 
-## Phase 4 — evidence before a tagged source release
+**Exit:** reviewed dual-stack correctness/lifecycle evidence, before broad
+whole-device claims or OEM performance tuning. No physical gate has passed yet.
 
-All requirements in [Testing](TESTING.md) and [Compatibility](COMPATIBILITY.md)
-need literal results before claiming support:
+## Stage 4 — upload shaping, measurement and adaptive autorate
 
-- API 26–35 emulator coverage and all three native ABIs.
-- Qualcomm and MediaTek physical devices across at least two OEMs; Airtel,
-  Jio, Vi where available, and Wi-Fi.
-- Ten consecutive start/stop cycles; DNS A/AAAA, TCP, QUIC/UDP, IPv4/IPv6,
-  captive-portal recovery; five checksum-verified 50 MB+ transfers; handover;
-  and 30-minute screen-off operation.
-- Repeated shaper-off/on measurements at multiple times of day showing lower
-  loaded latency with acceptable throughput retention.
-- Published matrix entries only for combinations that actually pass.
+- Add bounded TCP stream buffering, token-budget pacing, fair scheduling and
+  backpressure; prove transfer integrity, partial-write handling and fairness.
+  Packet-dropping AQM/ECN requires an explicitly valid queue and loss-recovery
+  proof. Never discard already-accepted stream bytes.
+- Add UDP upload pacing only after safe forwarding is stable, with bounded
+  datagrams and a documented loss policy. QUIC/UDP download shaping stays out.
+- Implement independent delay/load measurements and locally persisted per-network
+  samples with consent/data budgets, aging and endpoint failure handling. No
+  project-operated measurement service or self-limited capacity feedback.
+- Build adaptive delay/load autorate before relying on static product settings:
+  bounded changes, stale-data fallback, idle/handover handling and stability
+  evidence. Percentile × headroom may be a seed/fallback, not the entire control
+  strategy. Compare static and adaptive behavior explicitly.
+- Build honest off/on validation with independent upload/download load, stated
+  timing method, throughput, loss/errors, repeat samples and local persistence.
+  No grade without actual inputs. Apply per-app traffic profiles only after the
+  engine enforces them; current routing allow/deny settings are not rate profiles.
 
-## Project boundaries
+## Stage 5 — optional TCP download control
 
-- No remote proxy, telemetry server, TLS interception, payload inspection, or
-  data sale.
-- No universal-phone/carrier claim. Unsupported conditions must show a clear
-  recoverable state and must not leave traffic black-holed.
-- No APK/AAB distribution until the implementation and evidence gates above
-  are complete. The repository is source-only.
+Only after Stage 1 evidence and a reliable data path, integrate the supported
+protected-socket mechanism behind runtime capability and internal experiment
+gates. Revalidate effective remote-window behavior, bounded buffering,
+zero-window recovery, latency and throughput across physical combinations.
+TCP_WINDOW_CLAMP and TCP_INFO remain experimental until those results exist.
+The configuration/UI must support unavailable download control honestly; the
+current requirement for both positive rate limits is not that capability gate.
+
+Download failure does not authorize UDP dropping, TLS interception or a relay.
+If feasibility fails, revise scope and public claims before pursuing release.
+
+## Stage 6 — release evidence and separate activation review
+
+Meet [Testing](TESTING.md) and [Compatibility](COMPATIBILITY.md) with literal
+results: emulator/ABI checks, Qualcomm and MediaTek across two OEMs, Airtel/Jio/Vi
+where available, Wi-Fi/captive portal, ten start/stop cycles, five checksum-verified
+50 MB+ transfers, DNS/TCP/UDP/IPv6, transitions, 30-minute screen-off operation,
+and repeated loaded-latency/throughput comparisons at multiple times of day.
+Support claims name only tested features and combinations.
+
+Default route activation requires a separate reviewed change after applicable
+correctness and physical gates pass. Debug-only work cannot remove the README
+prototype banner or pretend the ordinary app forwards traffic. A tagged source
+release needs reproducible build evidence and accurate limitations. APK/AAB/Play
+distribution additionally requires signing/distribution work and current
+[Play Compliance](PLAY_COMPLIANCE.md) review, including a separate API migration.
+
+## Stage 7 — measured OEM/device performance tuning
+
+After universal correctness, use measured profiles for CPU, buffer, scheduling,
+battery and thermal budgets. Runtime capabilities still determine optional
+availability; a model allowlist cannot determine correctness. Repeat negative
+and fallback tests with each tuning profile and retain conservative defaults.
+
+## Stage 8 — later Radio Advisor and mapping research
+
+Observe public radio signals where permission/platform support permits, then
+consider local recommendations or mapping. Decide user consent, location/privacy,
+retention and measurement validity first. No advisor is implemented. Stock code
+does not force LTE/NR bands, NSA/SA or carrier aggregation. Exact band locking,
+if separately researched, belongs outside the universal stock application.
+
+## Boundaries throughout
+
+No project relay, telemetry backend, payload decryption, traffic resale or
+TLS interception. No universal-phone/carrier or hotspot/tethering guarantee.
+Unsupported conditions must be visible and recoverable without a black-hole
+route. Successful compilation is not forwarding, efficacy or release evidence.
