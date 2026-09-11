@@ -75,6 +75,6 @@ edits. Do not claim completion without actual output.
 
 Use a focused `codex/<short-topic>` branch, commit scoped work, and open a PR with
 actual verification output. Never push directly to main, force-push main, weaken
-protection, or merge your own PR. Main currently requires passing CI and one
-approving review; inspect live protection rather than assuming it is unchanged.
+protection, or merge your own PR. Inspect live protection for the current CI and
+approving-review requirements rather than assuming they are unchanged.
 An owner's explicit task instructions take precedence over generic defaults.
