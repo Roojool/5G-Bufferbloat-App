@@ -24,6 +24,20 @@ The prior DNS relay was removed because it did not preserve a user's resolver po
 
 These behaviors are documented because they are relevant to privacy and must be redesigned or made user-controllable before a production release.
 
+### Debug-only owner socket experiments
+
+The optional internal F-01/F-02 Activity opens ordinary protected sockets only
+to a numeric test endpoint explicitly supplied by the owner. It creates no VPN
+route and reads only the owner-requested synthetic test transfer; it does not
+capture other apps' traffic. It computes byte counts and SHA-256 incrementally,
+and reads socket-option/TCP_INFO observations. No payload is retained in results.
+Address/port and selected Network remain transient input and are not exported.
+Bounded results remain in memory until the owner explicitly saves redacted JSON
+through Android's document picker; there is no automatic upload. The chosen
+endpoint sees the connection and its ordinary network metadata. The project
+operates no endpoint. Release APKs exclude this internal harness. See
+[Experiments](docs/EXPERIMENTS.md) for bounds and owner data-cost controls.
+
 ## Local storage and logs
 
 The current source stores local shaper configuration in Android `SharedPreferences`. It retains up to 100 in-process health transitions; these disappear when the app process ends. If a future native engine fails to confirm its lifecycle state or exceeds the bounded native lifecycle watchdog, the app stores one generic local safety marker before ending its own process; it contains no packet, endpoint, app, or error-text data and is consumed on the next launch to explain the event. The shipped fail-closed path logs operational state but does not log packet or endpoint data.

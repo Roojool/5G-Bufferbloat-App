@@ -108,7 +108,8 @@ TUN or releases the socket-protection callback.
   acceptance/readback do not establish a changed advertised window, sender
   response or latency improvement. Physical tests must distinguish these claims,
   scaling/autotuning effects and stall recovery before optional enablement.
-  No TCP_WINDOW_CLAMP/TCP_INFO code exists in the current source.
+  A separate debug-only no-route F-01/F-02 harness now probes these options;
+  the production engine still implements neither mechanism.
 - **Packet AQM:** CoDel-style dropping/ECN is a candidate only at a packet queue
   with valid acceptance and retransmission semantics. Packets before receiver
   acceptance or stack-generated packets with a retained sender retransmission
@@ -183,3 +184,13 @@ The release implementation must preserve these invariants:
 ## Privacy design requirement
 
 No planned architecture may add a remote relay, telemetry service, advertising SDK, TLS certificate authority, payload decryption, or data resale. See [PRIVACY.md](../PRIVACY.md) for the precise behavior of the current prototype, including its DNS and diagnostic limitations.
+
+## Implemented internal Stage 1 seam
+
+The debug source set provides independent ExperimentConfig, a manually opened
+Activity, bound no-route VpnService and separate JNI library. One cancellable
+worker owns a protected socket; optional Network binding precedes connect.
+Bounded records distinguish call acceptance/readback from unverified transport,
+integrity/recovery and physical benefit. Release excludes this seam. It does
+not implement either production TCP leg or pass Stage 1. See
+[Experiments](EXPERIMENTS.md).

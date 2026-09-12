@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.bufferbloatshaper"
     compileSdk = 35
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.bufferbloatshaper"
@@ -35,6 +36,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            externalNativeBuild.cmake.arguments += "-DBB_BUILD_SOCKET_HARNESS=ON"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

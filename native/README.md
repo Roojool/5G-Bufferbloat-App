@@ -100,11 +100,9 @@ The project accepts only the release ABIs `arm64-v8a`, `armeabi-v7a`, and
 `x86_64`, with API 26 or newer. From PowerShell, use an output directory outside
 the repository:
 
-This standalone CMake example explicitly selects the intended/recommended r28c
-toolchain. It does not pin the app's Gradle `ndkVersion`: CI installs r28c, but
-local Gradle/CMake selection can differ, and the recorded Gradle build selected
-27.0.12077973. Installation is not selection evidence. A later implementation/build
-task must pin and verify the actual NDK; see [Source Build](../docs/SOURCE_BUILD.md).
+Gradle and this standalone example select NDK r28c (28.2.13676358).
+`tools/verify_harness_build.py` verifies actual Gradle/CMake selection and
+three-ABI debug/release packaging. See [Source Build](../docs/SOURCE_BUILD.md).
 
 ```powershell
 $ndk = "$env:ANDROID_SDK_ROOT\\ndk\\28.2.13676358"
@@ -159,3 +157,14 @@ real engine has been reviewed or vendored. A production migration must:
 
 Until those conditions are met, this native directory is an integration seam,
 not a functioning packet engine.
+
+## Separate debug feasibility surface
+
+`harness/socket_harness.cpp` builds as `bufferbloat_socket_harness` only when
+Gradle debug enables `BB_BUILD_SOCKET_HARNESS`. The default is OFF, including
+release. This library opens ordinary nonblocking TCP sockets for F-01/F-02 only;
+it has no TUN/route/gVisor access and changes none of production ABI v2 above.
+Kotlin's sole worker protects before bind/connect, owns FD cleanup, hashes only
+the synthetic test stream, and exports bounded typed observations. Native calls
+retain no callback or JNI reference. Read [Experiments](../docs/EXPERIMENTS.md)
+for field meanings, limits and still-unverified physical evidence.

@@ -50,13 +50,11 @@ See [Source Build](docs/SOURCE_BUILD.md) for prerequisites and commands. The sho
 ```
 
 Use JDK 21, Android SDK Platform 35, and CMake 3.22.1. NDK r28c
-(`28.2.13676358`) is the intended/recommended native toolchain and is installed
-by CI, but `app/build.gradle.kts` does not yet pin `ndkVersion`. Local
-Gradle/CMake selection can differ: the recorded local build selected
-`27.0.12077973`. Installing r28c does not prove Gradle selected it. A later build
-implementation task must pin and verify the actual NDK; this documentation PR
-does not change Gradle. See [Source Build](docs/SOURCE_BUILD.md) for setup and
-selection verification.
+(`28.2.13676358`) is pinned by Gradle and verified from actual CMake
+selection on all three ABIs. See [Source Build](docs/SOURCE_BUILD.md).
+A separate debug-only F-01/F-02 socket harness is available for owner experiments;
+it creates no VPN route and establishes no physical efficacy. The release APK
+excludes its components and native library. [Experiment procedure](docs/EXPERIMENTS.md)
 
 ## Contributing and reporting
 

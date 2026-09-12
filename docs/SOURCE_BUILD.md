@@ -9,8 +9,8 @@ This is a source-only prototype. Building an APK does **not** make it a supporte
 - Git
 - JDK 21 (Android Studio's bundled JBR 21 or a Temurin/OpenJDK 21 installation)
 - Android SDK Platform 35 and the matching platform/build tools accepted by Android Gradle Plugin
-- Android NDK r28c (`28.2.13676358`), the intended/recommended native toolchain
-  installed by CI, and CMake 3.22.1; see the selection distinction below
+- Android NDK r28c (`28.2.13676358`), pinned by Gradle and installed by CI,
+  and CMake 3.22.1; see selection verification below
 - Android SDK command-line tools or Android Studio
 - For device installation: Android Debug Bridge (`adb`) and a device with developer options enabled
 
@@ -23,14 +23,12 @@ implementation task. No maximum runtime API is configured.
 The wrapper pins Gradle 8.9 and its checksum; the version catalog selects AGP
 8.7.3 and Kotlin 2.1.0. Java/Kotlin bytecode targets 17, separate from the JDK 21
 build runtime. Gradle selects CMake 3.22.1 and builds C++17 for arm64-v8a,
-armeabi-v7a and x86_64. CI installs the intended/recommended NDK r28c
-(`28.2.13676358`), but `app/build.gradle.kts` does **not** pin `ndkVersion`.
-Local Gradle/CMake selection can therefore differ; the recorded local build's
-three ABI caches selected `27.0.12077973`. Installing r28c does not prove Gradle
-selected it, locally or in CI. Record the selected NDK from each build's native
-output/CMakeCache.txt rather than inferring it from installed packages.
-A later implementation/build task must pin and verify the actual NDK on local
-and CI builds. This documentation PR does not change Gradle or establish a pin.
+armeabi-v7a and x86_64. Gradle now pins `ndkVersion = "28.2.13676358"` (r28c).
+CI installs that exact package. Both local and CI verification run
+`python tools/verify_harness_build.py` after debug and release assembly; it
+reads each selected CMake cache and NDK source.properties and checks that only
+debug packages the socket harness. Old local CMake caches are not current build
+evidence. A mismatch fails verification; do not fall back to another NDK.
 
 ### Windows PowerShell
 
@@ -89,3 +87,18 @@ Use a local, untracked signing setup only when a future release process has been
 ## Reproducibility status
 
 The Gradle wrapper pins Gradle and the project no longer contains a machine-specific JDK location. A public release still requires documented fresh-clone validation on Windows, macOS, and Linux, plus a real native engine in place of the intentionally unavailable JNI stub.
+
+## Internal Stage 1 harness checks
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+python tools/verify_harness_build.py
+python -m unittest discover -s tools -p test_socket_endpoint.py -v
+```
+
+Release assembly is an unsigned packaging regression check, not distribution.
+The debug-only harness has its own JNI library and cannot establish a route.
+Launch and owner-run procedures are in [Experiments](EXPERIMENTS.md).
+For emulator-only execution use `:app:connectedDebugAndroidTest`; see
+[Testing](TESTING.md) for the optional prepared-service API test and exact evidence
+boundary. CI compiles instrumentation and runs no external-network tests.
