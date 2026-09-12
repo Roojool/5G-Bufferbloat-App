@@ -23,10 +23,11 @@ Algorithm tests and lifecycle scaffolding are not a working shaper.
 
 ## Stage 1 — protected-socket / transport feasibility (in progress, UNPASSED)
 
-1. The debug-only no-route F-01/F-02 harness is implemented; execute its physical
-   falsifiable procedures in [Experiments](EXPERIMENTS.md) before claiming this
-   stage passed. Keep the ordinary app
-   unavailable; a debug APK is not automatically an experimental-route gate.
+1. The debug-only no-route F-01/F-02 harness and reusable host batch automation
+   are implemented; execute their physical falsifiable procedures in
+   [Experiments](EXPERIMENTS.md) before claiming this stage passed. Keep the
+   ordinary app unavailable; a debug APK is not automatically an
+   experimental-route gate.
 2. Test the **remote-facing OS TCP socket**: bounded receive behavior,
    TCP_WINDOW_CLAMP and TCP_INFO. Record protection, option/errno/readback,
    actual transport effect, latency/throughput and safe failure on physical

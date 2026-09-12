@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "preset": "wifi-screen",
+  "transport": "wifi",
+  "failure_policy": "continue",
+  "budgets": {
+    "max_run_bytes": 16777216,
+    "max_total_bytes": 167772160,
+    "max_run_seconds": 60,
+    "max_total_seconds": 900
+  },
+  "rtt": {"method": "adb_shell_ping", "interval_ms": 200, "idle_count": 5, "load_count": 20},
+  "variants": [
+    {"id": "baseline", "config": {}},
+    {"id": "rcvbuf-16384", "config": {"receiveBuffer": 16384}},
+    {"id": "rcvbuf-65536", "config": {"receiveBuffer": 65536}},
+    {"id": "rcvbuf-262144", "config": {"receiveBuffer": 262144}},
+    {"id": "clamp-16384", "config": {"clamp": 16384}},
+    {"id": "clamp-65536", "config": {"clamp": 65536}},
+    {"id": "clamp-262144", "config": {"clamp": 262144}},
+    {"id": "cadence-5ms", "config": {"cadenceMs": 5}},
+    {"id": "cadence-50ms", "config": {"cadenceMs": 50}},
+    {"id": "read-withholding-recovery", "config": {"readBytes": 4096, "cadenceMs": 5, "changes": [{"atMs": 5000, "cadenceMs": 2000}, {"atMs": 7000, "cadenceMs": 5}]}}
+  ]
+}

@@ -29,11 +29,15 @@ def main():
                 assert f"lib/{abi}/libbufferbloat_native_engine.so" in entries
                 present = f"lib/{abi}/libbufferbloat_socket_harness.so" in entries
                 assert present == (variant == "debug"), (variant, abi, "incorrect harness packaging")
+            manifest = archive.read("AndroidManifest.xml")
+            components = ("HarnessActivity", "HarnessService", "BatchHarnessActivity")
             if variant == "release":
-                manifest = archive.read("AndroidManifest.xml")
                 for encoding in ("utf-8", "utf-16-le"):
-                    assert "HarnessActivity".encode(encoding) not in manifest
-                    assert "HarnessService".encode(encoding) not in manifest
+                    for component in components:
+                        assert component.encode(encoding) not in manifest
+            else:
+                for component in components:
+                    assert any(component.encode(encoding) in manifest for encoding in ("utf-8", "utf-16-le")), component
         print(f"{variant}: three production stub libraries; debug harness packaging/manifest gate PASS")
 
 

@@ -188,9 +188,18 @@ No planned architecture may add a remote relay, telemetry service, advertising S
 ## Implemented internal Stage 1 seam
 
 The debug source set provides independent ExperimentConfig, a manually opened
-Activity, bound no-route VpnService and separate JNI library. One cancellable
-worker owns a protected socket; optional Network binding precedes connect.
-Bounded records distinguish call acceptance/readback from unverified transport,
-integrity/recovery and physical benefit. Release excludes this seam. It does
-not implement either production TCP leg or pass Stage 1. See
-[Experiments](EXPERIMENTS.md).
+consent Activity, an ADB-driven batch Activity, bound no-route VpnService and
+separate JNI library. The host invokes one Android command per manifest run;
+Android re-resolves the requested Wi-Fi/cellular Network and the existing
+service starts a fresh worker/socket. One cancellable worker owns that protected
+socket; protection and optional Network binding precede connect. Cancellation
+signals the worker and never closes its descriptor concurrently.
+
+The host owns aggregate byte/time policy, starts one synthetic endpoint per run,
+can collect independent adb-shell ping and an optional flow-filtered TShark
+capture, and checkpoints raw/private files only below ignored `output/`. A
+separate allowlisted summary excludes endpoint/Network/device identifiers and
+keeps acceptance/readback, sender transport effect, integrity/recovery and
+physical benefit distinct. Captures remain pending review; automation never
+infers efficacy. Release excludes this seam. It implements neither production
+TCP leg and does not pass Stage 1. See [Experiments](EXPERIMENTS.md).
