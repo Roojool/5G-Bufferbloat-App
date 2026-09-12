@@ -47,7 +47,10 @@ Use the Compatibility report issue form for a shareable record.
 
 Use a per-run record in [Experiments](EXPERIMENTS.md) with hypothesis, exact
 commit, device, Android/kernel, SoC/OEM, network, procedure, literal redacted
-output, conclusion and verification scope. The proposed experiments are unrun.
+output, conclusion and verification scope. Two initial one-phone Wi-Fi runs now
+establish only baseline/receive-buffer acceptance, readback and transfer
+integrity for their stated setup; the mechanism and benefit experiments remain
+unrun or unverified as recorded there.
 
 | Category | What it can establish | What it cannot establish alone |
 |---|---|---|
@@ -147,9 +150,11 @@ Stop the test immediately and disable the VPN if traffic stalls, the device lose
 
 Exact Wi-Fi-first/cellular-second owner instructions, JSON variants, field
 meanings and proposed screening criteria are in [Experiments](EXPERIMENTS.md).
-Stage 1 remains UNPASSED; owner physical outcomes are UNVERIFIED — REQUIRES
-PHYSICAL EXPERIMENT. Keep acceptance, readback, sender-observed window/throughput,
-integrity/recovery and loaded-latency conclusions separate.
+Stage 1 remains UNPASSED. The first owner Wi-Fi baseline and SO_RCVBUF=65536
+runs establish the narrow acceptance/readback and exact transfer-integrity scope
+recorded there. Sender-observed window/throughput, deliberate stall/zero-window
+recovery, loaded-latency benefit, cellular efficacy and broader compatibility
+remain UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT. Keep these conclusions separate.
 
 Alongside the four required Gradle tasks, run:
 

@@ -4,9 +4,10 @@ Snapshot: 2026-09-12. This Stage 1 task starts from current main
 `dc8b83d499af5c1861ce10d55b055c6853b9968d` (merged PR #4), on
 `codex/phase1-protected-socket-harness`. PR #3's rebaseline and PR #4's hygiene
 are merged; older closed/unmerged proposals are not dependencies. The stale
-local main was not used as the implementation base. Final commit/PR and CI
-results accompany the task report; this snapshot does not claim a pending PR
-has merged. Unrelated ignored local artifacts were preserved.
+local main was not used as the implementation base. PR #5 is open; its harness
+implementation commit `0e00eb62e7bb04dc7922d633c0add15940dc7257` is the exact
+code used for the first owner Wi-Fi evidence. This snapshot does not claim the
+pending PR has merged. Unrelated ignored local artifacts were preserved.
 
 ## Reconciliation and next gate
 
@@ -19,11 +20,16 @@ configuration and evidence layers, fresh socket baselines, length-safe native
 observations, bounded ownership and explicit failure. It implements no F-03,
 AQM, autorate, gVisor, TUN forwarding or production capability framework.
 
-**Stage 1 remains UNPASSED.** F-01/F-02 physical window, sender-response,
-recovery and loaded-latency evidence is **UNVERIFIED — REQUIRES PHYSICAL
-EXPERIMENT**. Next: owner Wi-Fi screens, then cellular paired runs following
-[Experiments](EXPERIMENTS.md). Negative download evidence may narrow the product
-to independently proven upload; upload itself is not proven by this task.
+**Stage 1 remains UNPASSED.** One real arm64 phone on an explicitly selected
+Wi-Fi Network completed the baseline and SO_RCVBUF=65536 transfers with exact
+byte/hash integrity. The buffer request was accepted and read back as 131072;
+TCP_INFO calls succeeded with length 232 and the documented fields available.
+Sender-observed window control, useful throttling, deliberate stall/zero-window
+recovery, loaded-latency benefit, cellular efficacy and general OEM support are
+**UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**. Next: paired Wi-Fi sender-capture
+and independent timing, then cellular runs following [Experiments](EXPERIMENTS.md).
+Negative download evidence may narrow the product to independently proven
+upload; upload itself is not proven by this task.
 
 ## Checked-in implementation truth
 
@@ -66,6 +72,8 @@ The task runs required assembly/JVM/lint checks, release packaging regression,
 endpoint unit tests, and emulator loopback/API tests. Literal counts, executed
 versus cached tasks and exact emulator scope are recorded in EXPERIMENTS and
 the task/PR report. No build, emulator or option success passes a physical gate.
+The first owner phone report establishes only the exact Wi-Fi acceptance,
+readback and integrity scope recorded in EXPERIMENTS; it does not pass Stage 1.
 Main at task start had successful CI and no open PRs. Live protection required
 `Build, unit test, and lint`, zero approving reviews, no force-push; this task
 changes no protection and does not merge its PR.

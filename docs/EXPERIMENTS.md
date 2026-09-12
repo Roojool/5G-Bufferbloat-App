@@ -1,9 +1,10 @@
 # Engineering Experiments
 
 This is the home for literal feasibility, capability and performance evidence.
-Proposals are not results. As of 2026-09-12, **no physical experiment results are
-recorded here**. A separate debug-only F-01/F-02 no-route harness is implemented.
-Source/CI/emulator checks do not verify physical socket-control efficacy.
+Proposals are not results. As of 2026-09-12, two first-screen physical Wi-Fi runs
+are recorded for the debug-only F-01/F-02 no-route harness. They establish only
+the stated protected-socket transfer/integrity and runtime-probe observations.
+They do not verify physical socket-control efficacy.
 Use [Testing](TESTING.md) for evidence categories and
 [Compatibility](COMPATIBILITY.md) for narrowly scoped support claims.
 
@@ -50,7 +51,7 @@ Reviewer/date and evidence link:
 Next action / related decision / roadmap gate:
 ```
 
-## Experiment register — all physical outcomes unrun/unverified
+## Experiment register
 
 ### F-01 — protected remote-facing TCP receive control
 
@@ -69,8 +70,12 @@ loaded latency, throughput, CPU/memory, stalls, zero-window recovery and hashes.
 Repeat across Wi-Fi/cellular and OEM/kernel combinations. Keep a failed probe's
 fallback explicit. Window/RTT arithmetic alone is not a measurement.
 
-**Commit/device/Android/SoC/OEM/network:** not assigned. **Raw/redacted result:**
-none; not run. **Conclusion:** none. **Gate:** Stage 1, D-04 through D-06.
+**Current evidence:** runs F-01-WIFI-BASELINE-01 and F-01-WIFI-RCVBUF-01 below
+are verified only for their stated one-phone Wi-Fi scope: baseline
+transfer/integrity completed, and SO_RCVBUF=65536 was accepted and read back as
+131072 without loss of transfer integrity. Sender-observed window control,
+throttling, zero-window/recovery, loaded-latency benefit and cellular efficacy
+remain unverified. **Gate:** Stage 1, D-04 through D-06; not passed.
 
 ### F-02 — TCP_INFO capability and measurement meaning
 
@@ -84,8 +89,10 @@ when it is stale or inapplicable. In particular, do not assume a local
 TCP sender RTT field measures downlink queueing. Reject absent/truncated data
 safely; a successful call is not an accurate loaded-latency measurement.
 
-**Commit/device/Android/SoC/OEM/network:** not assigned. **Raw/redacted result:**
-none; not run. **Conclusion:** none. **Gate:** Stage 1, D-06 and D-13.
+**Current evidence:** the two Wi-Fi runs below returned TCP_INFO successfully
+with errno 0 and length 232; all fields exposed by this harness were available
+on this phone/run. Their values and meanings were not independently validated
+against sender or latency evidence. **Gate:** Stage 1, D-06 and D-13; not passed.
 
 ### F-03 — bounded TCP upload pacing and fairness
 
@@ -138,11 +145,13 @@ none; not run. **Conclusion:** none. **Gate:** Stage 4, D-11–D-13.
 
 ## Implemented F-01/F-02 harness (2026-09-12)
 
-Debug implementation available; **Stage 1 UNPASSED**. All physical outcomes:
-**UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**. The register above retains the
-unrun hypotheses. F-03 is not implemented. Prompt 0's verdict was GO TO STAGE 1
-WITH REQUIRED DESIGN CHANGES; this harness applies its evidence, configuration,
-fresh-socket and ownership requirements.
+Debug implementation available; **Stage 1 UNPASSED**. The first narrow physical
+Wi-Fi acceptance/readback and integrity screens are recorded below. Transport
+effect, recovery under deliberate stalls, physical benefit, cellular efficacy
+and general compatibility remain **UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**.
+F-03 is not implemented. Prompt 0's verdict was GO TO STAGE 1 WITH REQUIRED
+DESIGN CHANGES; this harness applies its evidence, configuration, fresh-socket
+and ownership requirements.
 
 ### Gate, ownership and bounds
 
@@ -212,6 +221,59 @@ queue-delay probe. Compare independent timing and sender evidence.
 [Linux implementation](https://github.com/torvalds/linux/blob/master/net/ipv4/tcp.c),
 [AOSP header](https://github.com/aosp-mirror/platform_bionic/blob/master/libc/kernel/uapi/linux/tcp.h).
 Upstream interfaces do not establish OEM kernel behavior.
+
+### First owner physical Wi-Fi screen (reported 2026-09-12)
+
+These runs used implementation commit
+`0e00eb62e7bb04dc7922d633c0add15940dc7257` from
+`codex/phase1-protected-socket-harness`, a real arm64 Android phone, an explicitly
+selected Wi-Fi Network, and an owner-controlled LAN endpoint. The device model,
+Android/kernel version and SoC/OEM were not supplied, so the evidence cannot be
+generalized to a device family or Android release. No address, device identifier,
+location, capture or other private artifact is committed. The owner supplied the
+redacted structured results below; the run date was not separately supplied.
+
+Endpoint contract for both completed runs: 16777216 bytes and SHA-256
+`287507f403176f1f5b22b9a4d9cb49f7d7f88ac19e406b5ae87ce109564846bd`.
+
+| Run ID | Variant | Literal redacted result |
+|---|---|---|
+| F-01-WIFI-BASELINE-01 | Untouched baseline | COMPLETE; 16777216 bytes; SHA-256 exact match; elapsed_ms=4187; longest_no_progress_ms=48; close_errno=0; SO_RCVBUF before/after connect=4194304/4194304; TCP_WINDOW_CLAMP before/after connect=0/3144280; TCP_INFO calls errno=0, returned_length=232 |
+| F-01-WIFI-RCVBUF-01 | SO_RCVBUF requested 65536 | COMPLETE; 16777216 bytes; SHA-256 exact match; elapsed_ms=4201; longest_no_progress_ms=43; close_errno=0; setsockopt errno=0; getsockopt errno=0; SO_RCVBUF before/after connect=131072/131072; TCP_WINDOW_CLAMP before/after connect=0/96856; TCP_INFO calls errno=0, returned_length=232 |
+
+Status for both runs: **verified for stated scope** after review of the owner's
+redacted report. The baseline protected-socket transfer/integrity screen passed
+on this setup. The 65536 receive-buffer request was accepted, doubled on readback
+to 131072, and preserved exact byte/hash integrity. TCP_INFO was available;
+length 232 covered every compiled field exported by this harness. This is one
+phone, one Wi-Fi topology and one run per variant. The near-equal elapsed times
+are observations, not a throughput-control result.
+
+Evidence boundaries:
+
+| Layer | Conclusion from these runs |
+|---|---|
+| 1 API/constant | Available in this build on this phone for the calls exercised |
+| 2 Acceptance | SO_RCVBUF=65536 setsockopt succeeded with errno 0; no clamp set was attempted |
+| 3 Readback | SO_RCVBUF returned 131072; literal clamp and TCP_INFO readbacks above succeeded |
+| 4 Transport effect | **UNVERIFIED**: no sender capture/window evidence; clamp readback is not advertised-window proof |
+| 4 Sender response | **UNVERIFIED**: single short runs and elapsed times do not establish useful throttling |
+| 5 Integrity/recovery | Exact count/hash and COMPLETE establish integrity for these transfers; deliberate stall, zero-window and recovery remain **UNVERIFIED** |
+| 6 Physical benefit | **UNVERIFIED**: no loaded-latency comparison; no cellular run |
+
+An earlier setup attempt on a different hotspot is retained as
+F-01-WIFI-SETUP-01 with status **inconclusive**: connect failed before transfer
+with CONNECT_FAILED and errno 113. Subsequent LAN success identifies
+connectivity/topology as the supported explanation; the failure is not evidence
+for or against F-01 control efficacy. No endpoint details are retained.
+
+The next physical experiment is a fresh-socket, sufficiently long Wi-Fi pair of
+baseline and SO_RCVBUF=65536 with a backlogged sender, private sender-side capture
+from before SYN, and independent idle/load RTT timing. It should test whether the
+readback difference produces a repeatable scaled advertised-window/right-edge
+change and sender-throughput response while preserving count/hash. Then exercise
+read withholding/reopening for zero-window and recovery evidence before moving to
+the documented randomized cellular pairs.
 
 ### Owner procedure: Wi-Fi first, then cellular
 
@@ -318,11 +380,12 @@ cannot pass layers 4–6. Clamp failure may leave buffering/read experiments use
 download failure may narrow future scope to independently proven upload. Never
 compensate with UDP dropping, TLS interception or a relay.
 
-Immediate minimum: one phone, Wi-Fi then cellular. Preferred early: Qualcomm and
+Immediate minimum: complete the remaining one-phone Wi-Fi mechanism screens,
+then cellular. Preferred early: Qualcomm and
 MediaTek across two OEM/kernel contexts. Later: broader Android/carrier/family,
 transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memory/
-thermal screening belongs with a pinned minimal Stage 2 adapter. No physical
-device/carrier success is recorded here.
+thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
+Wi-Fi results above are not a device-family, carrier or efficacy success.
 
 ### Literal implementation validation (2026-09-12; not physical efficacy)
 
