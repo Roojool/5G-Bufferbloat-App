@@ -1,13 +1,11 @@
 # Current Project Context
 
-Snapshot: 2026-09-12. This Stage 1 task starts from current main
-`dc8b83d499af5c1861ce10d55b055c6853b9968d` (merged PR #4), on
-`codex/phase1-protected-socket-harness`. PR #3's rebaseline and PR #4's hygiene
-are merged; older closed/unmerged proposals are not dependencies. The stale
-local main was not used as the implementation base. PR #5 is open; its harness
-implementation commit `0e00eb62e7bb04dc7922d633c0add15940dc7257` is the exact
-code used for the first owner Wi-Fi evidence. This snapshot does not claim the
-pending PR has merged. Unrelated ignored local artifacts were preserved.
+Snapshot: 2026-09-12. This Stage 1 automation task starts from current main
+`2f59669389be2bd89fa1c29f655327d47fa7d1e2` (merged PR #5), on
+`codex/stage1-batch-automation`. The protected-socket harness and its first
+owner Wi-Fi evidence are therefore checked-in dependencies, not copied from an
+unmerged branch. The exact automation commit/PR and CI results accompany the
+task report. Unrelated ignored local artifacts are preserved.
 
 ## Reconciliation and next gate
 
@@ -54,6 +52,12 @@ upload; upload itself is not proven by this task.
 - Owner-run Python endpoint generates synthetic deterministic bytes only. No
   project endpoint, application relay/proxy, packet capture, TLS interception,
   telemetry or arbitrary payload inspection is added.
+- A host Python orchestrator and debug-only ADB Activity command surface can run
+  manifest-defined fresh-socket experiments sequentially after manual consent.
+  They re-resolve an explicit Wi-Fi/cellular Network per run, manage the owner
+  endpoint, enforce byte/time plans, retain failures under ignored `output/`,
+  and create a separate redacted summary. Optional sender TShark capture and
+  independent adb-shell ping observations never promote efficacy automatically.
 - Production directional configuration still requires both positive limits.
   Its independent capability model remains Stage 3 work. Kotlin queues,
   calibration and validation remain disconnected scaffolding.
@@ -69,8 +73,8 @@ NDK's source.properties, independently of merely installing that package.
 No Go/gVisor version is pinned or integrated; its old CMake switch still fails.
 
 The task runs required assembly/JVM/lint checks, release packaging regression,
-endpoint unit tests, and emulator loopback/API tests. Literal counts, executed
-versus cached tasks and exact emulator scope are recorded in EXPERIMENTS and
+endpoint/orchestrator unit tests, and instrumentation compilation. Literal
+counts and executed versus cached task evidence are recorded in EXPERIMENTS and
 the task/PR report. No build, emulator or option success passes a physical gate.
 The first owner phone report establishes only the exact Wi-Fi acceptance,
 readback and integrity scope recorded in EXPERIMENTS; it does not pass Stage 1.

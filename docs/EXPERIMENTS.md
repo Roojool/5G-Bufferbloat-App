@@ -178,8 +178,9 @@ at most eight ordered changes. Retention: 256 TCP_INFO samples plus omitted coun
 at most twenty option records and nine cadence events. Duration 1..120 seconds,
 default 60; no-progress timeout 0.5..30 seconds, default 10. Expected data
 1..256 MiB, plus at most one excess-detection byte. Hashing is incremental SHA-256.
-The owner must enforce the proposed 1 GiB session allowance or a smaller chosen
-allowance; there is no automated aggregate-session budget in this first harness.
+The manual UI still requires the owner to enforce the proposed 1 GiB session
+allowance or a smaller chosen allowance. The host batch automation below rejects
+plans above its per-run/aggregate byte and time bounds before sending data.
 
 Results distinguish compiled constants, set/get errno (null = not attempted),
 requested value, actual readback and length. An absent constant never fabricates
@@ -275,7 +276,69 @@ change and sender-throughput response while preserving count/hash. Then exercise
 read withholding/reopening for zero-window and recovery evidence before moving to
 the documented randomized cellular pairs.
 
-### Owner procedure: Wi-Fi first, then cellular
+### Automated owner procedure: Wi-Fi first, then cellular
+
+`tools/stage1_batch.py` drives one fresh protected socket per manifest run through
+a debug-only ADB Activity. It never clicks UI coordinates, prepares consent,
+establishes a VPN route or calls production code. It fetches origin/main, requires
+a clean checkout containing it, records the exact source SHA and installed APK
+hash, discovers one authorized ADB target, and collects Android release/API,
+kernel and ABI without model/serial/fingerprint identifiers. Android resolves
+the requested non-VPN Wi-Fi or cellular Network during the probe and again for
+every run; an active matching Network is selected, otherwise exactly one match
+or an explicit private `--network-ordinal` is required.
+
+One-time prerequisites: JDK 21/Android SDK/ADB/Python 3, one USB-debug-authorized
+physical phone, no competing/lockdown VPN, an owner-controlled numeric endpoint
+address reachable over the requested phone transport, and an owner firewall rule
+for the chosen test port. Install debug, open the manual Activity once and choose
+Prepare if the batch reports CONSENT_REQUIRED:
+
+```powershell
+adb shell am start -n com.bufferbloatshaper/.harness.HarnessActivity
+```
+
+After that consent and Wi-Fi connection, one Windows/PowerShell command builds,
+installs, starts/stops the endpoint for every variant and saves each result:
+
+```powershell
+$env:STAGE1_ENDPOINT_IP = "<numeric address of this owner-controlled host>"
+py -3 tools\stage1_batch.py --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --build --install
+```
+
+Add `--tshark-interface "<owner sender interface>"` to request a private capture.
+TShark starts before the endpoint and uses a capture filter restricted to the
+owned endpoint host and test TCP port. Missing/unstartable TShark records SKIPPED
+and leaves sender-window evidence UNVERIFIED. The manifest records independent
+adb-shell ping round-trip collection before and during load; its method and
+sample summary are retained separately. TCP_INFO RTT never substitutes for it,
+and neither method is interpreted as one-way queue delay.
+
+Tracked presets:
+
+| Preset | Contents and policy |
+|---|---|
+| `wifi-screen` | Baseline; isolated SO_RCVBUF 16384/65536/262144; isolated clamp 16384/65536/262144; cadence 5/50 ms; deliberate cadence withholding/recovery. Ten stable runs, continue after a failed run while retaining it; no combined “best” candidate. |
+| `wifi-efficacy` | Longer baseline and explicitly provisional receive-buffer candidate, with longer independent RTT collection. Copy/edit a manifest outside tracked source and pass `--manifest` to change candidate, bytes or duration within bounds. Capture analysis remains external. |
+| `cellular-paired` | Five seeded, reproducible randomized baseline/candidate pairs. The candidate and seed are manifest inputs, not a product choice. Stops after a failed run by default; `--continue-on-failure` is explicit. No cellular result is implied. |
+
+Every session checkpoints private input, endpoint output, phone records, RTT text
+and optional pcap under ignored `output/stage1/<session>/raw/`. The separate
+`redacted-summary.json` excludes endpoints, ports, Network handles/ordinals,
+capture paths/interfaces, precise location, credentials and device/ADB IDs.
+Option acceptance/readback, sender transport effect, integrity/recovery and
+physical benefit are separate fields. Exact endpoint+phone byte/hash agreement
+can mark only that transfer's integrity. A capture is pending review, and physical
+benefit always remains UNVERIFIED until reviewed analysis supplies it.
+
+Manifest budgets cannot exceed 256 MiB/120 seconds per run or 1 GiB/one hour per
+batch and may be lower. Ctrl+C or creating `ABORT` in the printed session folder
+signals cancellation; the existing worker retains sole FD ownership and closes
+it. Missing phone/build match/consent/network stops preflight. Endpoint or run
+failure is retained, then stop/continue follows the manifest/CLI policy. Raw
+artifacts are never deleted to hide contrary evidence.
+
+### Manual fallback procedure
 
 1. Use an owned phone and authorized directly reachable test machine. Choose a
    byte/time allowance before testing. Do not prepare alongside a needed VPN or
@@ -386,6 +449,39 @@ MediaTek across two OEM/kernel contexts. Later: broader Android/carrier/family,
 transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memory/
 thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
 Wi-Fi results above are not a device-family, carrier or efficacy success.
+
+### Literal batch-automation validation (2026-09-12; no physical run)
+
+Implemented on `codex/stage1-batch-automation` from current main
+`2f59669389be2bd89fa1c29f655327d47fa7d1e2`; final commit/PR and CI accompany
+the task report. The first Gradle attempt selected local Java 25.0.2 and failed
+before compilation with `What went wrong: 25.0.2`. Validation then explicitly
+selected the repository-required Android Studio JBR 21.0.10. This failed attempt
+is toolchain evidence, not a source failure or physical result.
+
+```text
+python -m unittest discover -s tools -p "test_*.py" -v
+Ran 12 tests in 2.524s
+OK
+
+gradlew :app:testDebugUnitTest --rerun-tasks
+BUILD SUCCESSFUL in 49s
+22 actionable tasks: 22 executed
+JVM XML: tests=44 failures=0 errors=0 skipped=0
+
+gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 1m
+136 actionable tasks: 25 executed, 111 up-to-date
+Lint errors: 0
+Lint warnings: 66
+```
+
+`verify_harness_build.py` again reported NDK 28.2.13676358 for all three debug
+and release ABIs, harness ON only in debug, and both packaging/manifest gates
+PASS. Instrumentation was compiled, not executed. `adb devices -l` listed no
+device, so the ADB command path, consent/network resolution, endpoint orchestration,
+TShark/RTT collection and physical results are **UNVERIFIED — REQUIRES PHYSICAL
+EXPERIMENT**. No new physical F-01/F-02 outcome is recorded by this task.
 
 ### Literal implementation validation (2026-09-12; not physical efficacy)
 

@@ -93,7 +93,7 @@ The Gradle wrapper pins Gradle and the project no longer contains a machine-spec
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
 python tools/verify_harness_build.py
-python -m unittest discover -s tools -p test_socket_endpoint.py -v
+python -m unittest discover -s tools -p "test_*.py" -v
 ```
 
 Release assembly is an unsigned packaging regression check, not distribution.
@@ -102,3 +102,18 @@ Launch and owner-run procedures are in [Experiments](EXPERIMENTS.md).
 For emulator-only execution use `:app:connectedDebugAndroidTest`; see
 [Testing](TESTING.md) for the optional prepared-service API test and exact evidence
 boundary. CI compiles instrumentation and runs no external-network tests.
+
+For a physical Wi-Fi screen on Windows, connect exactly one authorized phone,
+make the owner endpoint address reachable on that Wi-Fi, complete the one-time
+consent described in EXPERIMENTS, then run from a clean checkout:
+
+```powershell
+$env:STAGE1_ENDPOINT_IP = "<numeric address of this owner-controlled host>"
+py -3 tools\stage1_batch.py --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --build --install
+```
+
+The first build records the current clean Git SHA and APK hash below ignored
+`output/stage1/build-provenance/`; the installed APK must match exactly. Later
+runs may omit `--build --install` only while that current-commit provenance and
+installed APK still match. This is source/build identity evidence, not physical
+socket-control evidence.

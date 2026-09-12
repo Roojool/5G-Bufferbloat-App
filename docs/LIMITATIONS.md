@@ -27,8 +27,9 @@ The following are release blockers, not caveats to hide from users:
 - The historical IPv6/DNS prototype routed IPv6 without a working forwarding path and changed resolver behavior. IPv6 routes and DNS substitution are now absent from the service; an IPv4-only engine must explicitly let IPv6 use Android's ordinary network until dual-stack forwarding passes tests. A native implementation must preserve normal resolver behavior before DNS interception is enabled.
 - TCP download shaping is unimplemented/unverified. The candidate control point
   is the protected remote-facing Android/Linux TCP socket, not only the separate
-  app-facing userspace endpoint. TCP_WINDOW_CLAMP/TCP_INFO and runtime optional
-  probes remain experiments without physical evidence.
+  app-facing userspace endpoint. One narrow phone/Wi-Fi acceptance/readback and
+  integrity screen exists; TCP_WINDOW_CLAMP/TCP_INFO remain experiments without
+  sender-observed control, latency-benefit or broad compatibility evidence.
 - Calibration does not yet take or persist independent physical-network measurements; automatic updates remain disabled rather than feeding shaped throughput back into its own limit.
 - Adaptive delay/load autorate is planned; a percentile/headroom calculation is
   not a working adaptive controller. No upload pacing/backpressure or packet AQM
@@ -52,6 +53,7 @@ A debug-only no-route F-01/F-02 harness can now collect socket-call observations
 from an owner-authorized synthetic endpoint. It does not prove download control,
 create a forwarding path, or pass Stage 1. Every physical efficacy outcome remains
 UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT. See [Experiments](EXPERIMENTS.md).
+Host batch automation reduces manual repetition but does not change that boundary.
 
 Hotspot/tethering traffic is a separate, **non-guaranteed** scope. An on-device
 VpnService path and its tests do not establish that traffic from tethered clients

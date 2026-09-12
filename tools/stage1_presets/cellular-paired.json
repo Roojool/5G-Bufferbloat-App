@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "preset": "cellular-paired",
+  "transport": "cellular",
+  "failure_policy": "stop",
+  "budgets": {
+    "max_run_bytes": 67108864,
+    "max_total_bytes": 671088640,
+    "max_run_seconds": 120,
+    "max_total_seconds": 1500
+  },
+  "rtt": {"method": "adb_shell_ping", "interval_ms": 200, "idle_count": 30, "load_count": 350},
+  "paired": {
+    "repetitions": 5,
+    "seed": 20260912,
+    "candidate_id": "candidate-rcvbuf-65536",
+    "baseline": {"expectedBytes": 67108864, "durationMs": 120000, "stallTimeoutMs": 10000},
+    "candidate": {"expectedBytes": 67108864, "durationMs": 120000, "stallTimeoutMs": 10000, "receiveBuffer": 65536}
+  }
+}

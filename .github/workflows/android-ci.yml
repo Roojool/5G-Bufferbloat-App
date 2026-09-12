@@ -53,10 +53,10 @@ jobs:
             :app:lintDebug \
             :app:assembleRelease
 
-      - name: Verify selected NDK, internal packaging, and test endpoint
+      - name: Verify selected NDK, internal packaging, and host tools
         run: |
           python3 tools/verify_harness_build.py
-          python3 -m unittest discover -s tools -p test_socket_endpoint.py -v
+          python3 -m unittest discover -s tools -p 'test_*.py' -v
 
       # `assembleDebug` packages the safe native stub for the configured
       # arm64-v8a/armeabi-v7a/x86_64 targets. `assembleDebugAndroidTest`

@@ -2,6 +2,10 @@
     <application>
         <activity android:name=".harness.HarnessActivity" android:exported="true"
             android:label="Internal socket experiment — no VPN route" />
+        <activity android:name=".harness.BatchHarnessActivity" android:exported="true"
+            android:excludeFromRecents="true" android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:label="Internal socket batch — no VPN route" />
         <service android:name=".harness.HarnessService" android:exported="false"
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE">
