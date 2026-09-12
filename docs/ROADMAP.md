@@ -2,8 +2,8 @@
 
 This sequence supersedes the historical mobile plan and earlier phase numbering.
 See [Project Context](PROJECT_CONTEXT.md) for the implementation snapshot and
-[Design Decisions](DESIGN_DECISIONS.md) for rationale. Every stage below Phase 0
-is planned/unpassed; documenting it does not implement or verify it.
+[Design Decisions](DESIGN_DECISIONS.md) for rationale. Stage 1 has an internal
+harness but remains unpassed; later stages are planned/unpassed.
 
 The order reduces technical risk: first prove the primary upload-bufferbloat
 value with internal IPv4 shaping/autorate experiments, then invest in full
@@ -17,13 +17,15 @@ The app is a fail-closed source prototype: Compose UI, local settings, routing
 preferences, structured manual diagnostics, CI and JNI ABI v2 exist. A deliberately
 unavailable three-ABI native stub causes UNSUPPORTED on a valid-config start;
 invalid settings report ERROR first. Neither path creates a route.
-It carries no traffic. Go/gVisor, socket probes, a real engine and live shaping
-are absent. Algorithm tests and lifecycle scaffolding are not a working shaper.
+It carries no traffic. Go/gVisor, a real engine and live shaping are absent.
+Socket probes exist only in the separate internal no-route F-01/F-02 harness.
+Algorithm tests and lifecycle scaffolding are not a working shaper.
 
-## Stage 1 — protected-socket / transport feasibility (next)
+## Stage 1 — protected-socket / transport feasibility (in progress, UNPASSED)
 
-1. Design a small stock-Android internal protected-socket harness and define
-   falsifiable procedures in [Experiments](EXPERIMENTS.md). Keep the ordinary app
+1. The debug-only no-route F-01/F-02 harness is implemented; execute its physical
+   falsifiable procedures in [Experiments](EXPERIMENTS.md) before claiming this
+   stage passed. Keep the ordinary app
    unavailable; a debug APK is not automatically an experimental-route gate.
 2. Test the **remote-facing OS TCP socket**: bounded receive behavior,
    TCP_WINDOW_CLAMP and TCP_INFO. Record protection, option/errno/readback,
@@ -44,8 +46,8 @@ unverified download control solved. A successful socket option is not this gate.
 
 1. Pin/review an Apache-compatible gVisor revision, Go toolchain, transitive
    licenses/notices and reproducible Android build path for all three ABIs.
-   Pin and verify actual NDK selection and handle future SDK migration in
-   implementation/build tasks; installing the recommended r28c is not a pin.
+   Retain Stage 1's verified r28c NDK pin and handle future SDK migration in
+   implementation/build tasks; dependency installation alone is not selection evidence.
    Do not adopt GPL-only or project-proxy-dependent tun2socks code.
 2. Build the internal gate and reuse/audit ABI v2: protect every socket before
    bind/connect/send, copy input records, duplicate the borrowed TUN safely,

@@ -142,3 +142,49 @@ required source checks above and report cached versus executed work honestly.
 ## When to stop testing
 
 Stop the test immediately and disable the VPN if traffic stalls, the device loses ordinary connectivity, a restart loop appears, a wake-lock warning is observed, or unexpected traffic handling occurs. Capture a redacted diagnostic record only after connectivity is restored.
+
+## Internal Stage 1 checks
+
+Exact Wi-Fi-first/cellular-second owner instructions, JSON variants, field
+meanings and proposed screening criteria are in [Experiments](EXPERIMENTS.md).
+Stage 1 remains UNPASSED; owner physical outcomes are UNVERIFIED — REQUIRES
+PHYSICAL EXPERIMENT. Keep acceptance, readback, sender-observed window/throughput,
+integrity/recovery and loaded-latency conclusions separate.
+
+Alongside the four required Gradle tasks, run:
+
+```text
+gradlew :app:assembleRelease
+python tools/verify_harness_build.py
+python -m unittest discover -s tools -p test_socket_endpoint.py -v
+```
+
+Release assembly checks unsigned packaging, not distribution. The verifier
+checks actual selected r28c from CMake caches/source.properties and debug-only
+harness libraries/components on all ABIs. CI runs these checks and needs no
+external test endpoint. src/testDebug tests cover mapping, absent fields,
+exact byte/hash accounting, protection/cancellation/cleanup failures, bounded
+storage and dynamic settings. Endpoint tests use synthetic partial-write peers.
+
+Execute `:app:connectedDebugAndroidTest` only on a designated emulator/test phone.
+SocketHarnessInstrumentationTest covers native prefix boundaries for all twelve
+fields, invalid-FD errno, denied-protect closure and an ephemeral loopback stream
+with redacted export. Its ordinary loopback test uses a fake true protector and
+is NOT VpnService.protect evidence. The optional real-service test requires the
+owner to prepare permission first via HarnessActivity and no active VPN; otherwise
+it is skipped. It checks actual protect, no VPN Network, cancellation and closure.
+Tests never accept consent or replace another VPN themselves. Record skips.
+The existing packaged-stub test still requires unavailable/ABI v2/zero features.
+
+To retain an emulator's explicitly prepared permission, install app and test APKs,
+open the internal Activity and accept Android's consent, then execute directly:
+
+```text
+adb -s emulator-5554 shell am instrument -w com.bufferbloatshaper.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Substitute the actual designated emulator serial. Direct execution avoids a
+Gradle test runner uninstall/reinstall discarding the prepared state. Report API,
+build and ABI. Real protect success without a VPN route still does not prove
+exclusion from an active route: that belongs to Stage 2. No instrumentation or
+emulator result proves physical window efficacy or carrier latency benefit.

@@ -39,7 +39,7 @@ submission policy is recorded separately in [Play Compliance](PLAY_COMPLIANCE.md
 | IPv6 forwarding | Not implemented; future IPv4-only path allows bypass | Early dual-stack/IPv6-only evidence before whole-device claims |
 | TCP upload pacing/fairness/backpressure | Disconnected Kotlin references only | Bounded buffers, byte integrity and physical load evidence |
 | TCP download control | Experimental proposal; no implementation | Protected-socket effect and physical latency/throughput evidence |
-| TCP_WINDOW_CLAMP / TCP_INFO | No runtime probes or phone results | Probe API/field availability, then validate actual usefulness separately |
+| TCP_WINDOW_CLAMP / TCP_INFO | Debug-only no-route F-01/F-02 probes; no physical phone results | Owner window/response/recovery/benefit evidence still required |
 | Adaptive autorate | Not implemented | Independent delay/load, stability and safe fallback evidence |
 | OEM tuning / Radio Advisor | Planned later; not implemented | Common correctness first, then scoped performance/permission evidence |
 

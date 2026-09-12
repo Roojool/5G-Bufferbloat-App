@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
 
 project(bufferbloat_native_engine LANGUAGES CXX)
+message(STATUS "Selected Android NDK: ${CMAKE_ANDROID_NDK}; version=${CMAKE_ANDROID_NDK_VERSION}")
+option(BB_BUILD_SOCKET_HARNESS "Internal no-route socket experiments" OFF)
 
 # This directory is intentionally an Android-NDK-only scaffold. The app's
 # Gradle module packages its unavailable stub for every release ABI. A real
@@ -53,3 +55,9 @@ set_target_properties(bufferbloat_native_engine PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES
 )
+
+if(BB_BUILD_SOCKET_HARNESS)
+    add_library(bufferbloat_socket_harness SHARED harness/socket_harness.cpp)
+    target_compile_features(bufferbloat_socket_harness PRIVATE cxx_std_17)
+    target_compile_options(bufferbloat_socket_harness PRIVATE -Wall -Wextra -Werror)
+endif()

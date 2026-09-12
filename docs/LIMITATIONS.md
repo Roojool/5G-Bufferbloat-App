@@ -43,8 +43,15 @@ The following are release blockers, not caveats to hide from users:
 Android permits one active VPN service per user/profile. Starting another stops
 the existing service; another always-on or lockdown VPN can also prevent this
 app's operation or ordinary-network fallback. The manifest disables this app's
-always-on support. This project does not promise coexistence with another VPN.
+always-on support on Android 8.1/API 27 and later, where that metadata is honored;
+the configured minimum API 26 must not be assumed to honor the opt-out.
+This project does not promise coexistence with another VPN.
 [Android VPN guide](https://developer.android.com/develop/connectivity/vpn)
+
+A debug-only no-route F-01/F-02 harness can now collect socket-call observations
+from an owner-authorized synthetic endpoint. It does not prove download control,
+create a forwarding path, or pass Stage 1. Every physical efficacy outcome remains
+UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT. See [Experiments](EXPERIMENTS.md).
 
 Hotspot/tethering traffic is a separate, **non-guaranteed** scope. An on-device
 VpnService path and its tests do not establish that traffic from tethered clients
