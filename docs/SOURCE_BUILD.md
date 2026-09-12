@@ -112,6 +112,13 @@ $env:STAGE1_ENDPOINT_IP = "<numeric address of this owner-controlled host>"
 py -3 tools\stage1_batch.py --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --build --install
 ```
 
+On Windows this command automatically probes TShark in `PATH` and standard
+Wireshark install locations, including Program Files, then maps the local bind
+address's Windows adapter to a stable `tshark -D` interface name. It never uses
+a numeric capture index. For an unusual install use `--tshark-path`; for an
+ambiguous adapter match use `--tshark-interface` with a stable name. Capture
+setup failures remain SKIPPED/UNVERIFIED and do not change transfer conclusions.
+
 The first build records the current clean Git SHA and APK hash below ignored
 `output/stage1/build-provenance/`; the installed APK must match exactly. Later
 runs may omit `--build --install` only while that current-commit provenance and

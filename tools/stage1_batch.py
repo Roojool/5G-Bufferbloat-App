@@ -10,6 +10,7 @@ import base64
 import hashlib
 import ipaddress
 import json
+import ntpath
 import os
 from pathlib import Path
 import random
@@ -41,6 +42,7 @@ TOKEN = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 PRIVATE_KEYS = {
     "address", "endpoint_address", "bind_address", "port", "serial", "device_id",
     "network_handle", "network_ordinal", "capture_path", "capture_interface", "pcap",
+    "tshark_path", "tshark_interface", "adapter_alias", "interface_identifier",
     "credential", "credentials", "location",
 }
 
@@ -78,6 +80,150 @@ def redact_private(value: Any) -> Any:
     if isinstance(value, list):
         return [redact_private(item) for item in value]
     return value
+
+
+def windows_tshark_candidates(environ: dict[str, str] | os._Environ[str]) -> list[str]:
+    """Return stable, de-duplicated Wireshark install locations."""
+    roots = [environ.get("ProgramFiles"), environ.get("ProgramFiles(x86)"),
+             environ.get("LOCALAPPDATA"), r"C:\Program Files", r"C:\Program Files (x86)"]
+    candidates: list[str] = []
+    for root in roots:
+        if not root:
+            continue
+        suffix = ("Programs", "Wireshark", "tshark.exe") if root == environ.get("LOCALAPPDATA") else (
+            "Wireshark", "tshark.exe")
+        candidate = ntpath.normpath(ntpath.join(root, *suffix))
+        if candidate.casefold() not in {item.casefold() for item in candidates}:
+            candidates.append(candidate)
+    return candidates
+
+
+def discover_tshark(explicit_path: str | None = None, *,
+                    which: Callable[[str], str | None] = shutil.which,
+                    environ: dict[str, str] | os._Environ[str] = os.environ,
+                    is_file: Callable[[str], bool] = os.path.isfile,
+                    windows: bool | None = None) -> dict[str, Any]:
+    """Find TShark without making its path part of redacted evidence."""
+    path_result = which("tshark")  # PATH is deliberately always the first probe.
+    if explicit_path:
+        candidate = os.path.abspath(os.path.expandvars(os.path.expanduser(explicit_path)))
+        if is_file(candidate):
+            return {"status": "READY", "source": "EXPLICIT", "tshark_path": candidate}
+        return {"status": "SKIPPED_TSHARK_EXPLICIT_PATH_NOT_FOUND",
+                "reason": "the explicit TShark executable does not exist"}
+    if path_result:
+        return {"status": "READY", "source": "PATH", "tshark_path": path_result}
+    effective_windows = os.name == "nt" if windows is None else windows
+    if effective_windows:
+        for candidate in windows_tshark_candidates(environ):
+            if is_file(candidate):
+                return {"status": "READY", "source": "WINDOWS_STANDARD_INSTALL",
+                        "tshark_path": candidate}
+    return {"status": "SKIPPED_TSHARK_UNAVAILABLE",
+            "reason": "TShark was not found in PATH or a standard Windows installation"}
+
+
+def parse_windows_ip_adapters(output: str, bind_address: str) -> list[str]:
+    """Extract adapter aliases owning the selected local bind address."""
+    try:
+        decoded = json.loads(output)
+    except json.JSONDecodeError:
+        return []
+    rows = decoded if isinstance(decoded, list) else [decoded]
+    aliases = {
+        str(row.get("InterfaceAlias", "")).strip()
+        for row in rows if isinstance(row, dict) and str(row.get("IPAddress", "")).strip() == bind_address
+    }
+    return sorted(alias for alias in aliases if alias)
+
+
+def parse_tshark_interfaces(output: str) -> list[dict[str, str]]:
+    """Parse `tshark -D` while retaining a non-numeric capture selector."""
+    interfaces: list[dict[str, str]] = []
+    for line in output.splitlines():
+        match = re.match(r"^\s*\d+\.\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        value = match.group(1)
+        capture_name = value
+        display_name = value
+        description = re.match(r"^(.*?)\s+\(([^()]*)\)$", value)
+        if description:
+            capture_name = description.group(1).strip()
+            display_name = description.group(2).strip()
+        if capture_name and not capture_name.isdecimal():
+            interfaces.append({"capture_interface": capture_name, "display_name": display_name})
+    return interfaces
+
+
+def match_tshark_interface(adapter_alias: str, interfaces: list[dict[str, str]]) -> dict[str, Any]:
+    """Match a Windows interface alias to exactly one stable TShark selector."""
+    wanted = adapter_alias.strip().casefold()
+    matches = [item for item in interfaces if wanted in {
+        item.get("display_name", "").strip().casefold(),
+        item.get("capture_interface", "").strip().casefold(),
+    }]
+    if len(matches) == 1:
+        return {"status": "READY", "interface_source": "WINDOWS_BIND_ADAPTER_MATCH",
+                "adapter_alias": adapter_alias,
+                "capture_interface": matches[0]["capture_interface"]}
+    if len(matches) > 1:
+        return {"status": "SKIPPED_TSHARK_INTERFACE_AMBIGUOUS",
+                "reason": "more than one TShark interface matched the bind-address adapter"}
+    return {"status": "SKIPPED_TSHARK_INTERFACE_NO_MATCH",
+            "reason": "no TShark interface matched the bind-address adapter"}
+
+
+def resolve_capture_setup(bind_address: str, explicit_path: str | None,
+                          explicit_interface: str | None, disabled: bool, *,
+                          command_fn: Callable[..., subprocess.CompletedProcess[str]] = command,
+                          which: Callable[[str], str | None] = shutil.which,
+                          environ: dict[str, str] | os._Environ[str] = os.environ,
+                          is_file: Callable[[str], bool] = os.path.isfile,
+                          windows: bool | None = None) -> dict[str, Any]:
+    """Resolve optional capture; failures remain a skipped evidence layer."""
+    if disabled:
+        return {"status": "SKIPPED_TSHARK_DISABLED", "reason": "capture disabled by owner"}
+    executable = discover_tshark(explicit_path, which=which, environ=environ,
+                                 is_file=is_file, windows=windows)
+    if executable["status"] != "READY":
+        return executable
+    tshark_path = executable["tshark_path"]
+    if explicit_interface:
+        if explicit_interface.strip().isdecimal():
+            return {"status": "SKIPPED_TSHARK_NUMERIC_INTERFACE_REJECTED",
+                    "reason": "numeric TShark interface indexes are transient; use its stable name"}
+        return {**executable, "interface_source": "EXPLICIT",
+                "capture_interface": explicit_interface.strip()}
+    effective_windows = os.name == "nt" if windows is None else windows
+    try:
+        if not effective_windows:
+            return {"status": "SKIPPED_TSHARK_INTERFACE_AUTO_UNSUPPORTED",
+                    "reason": "automatic bind-address interface resolution is currently Windows-only"}
+        if ipaddress.ip_address(bind_address).is_unspecified:
+            return {"status": "SKIPPED_TSHARK_BIND_UNSPECIFIED",
+                    "reason": "automatic capture needs a specific local bind address"}
+        powershell = which("powershell.exe") or which("powershell") or "powershell.exe"
+        adapter_result = command_fn([powershell, "-NoProfile", "-NonInteractive", "-Command",
+            "Get-NetIPAddress | Select-Object InterfaceAlias,InterfaceIndex,IPAddress | ConvertTo-Json -Compress"],
+            timeout=20, check=False)
+        if adapter_result.returncode != 0:
+            return {"status": "SKIPPED_TSHARK_ADAPTER_QUERY_FAILED",
+                    "reason": "Windows adapter lookup failed"}
+        aliases = parse_windows_ip_adapters(adapter_result.stdout, bind_address)
+        if len(aliases) != 1:
+            return {"status": "SKIPPED_TSHARK_BIND_ADAPTER_AMBIGUOUS" if aliases else
+                    "SKIPPED_TSHARK_BIND_ADAPTER_NO_MATCH",
+                    "reason": "the bind address did not resolve to exactly one Windows adapter"}
+        listing = command_fn([tshark_path, "-D"], timeout=20, check=False)
+        if listing.returncode != 0:
+            return {"status": "SKIPPED_TSHARK_INTERFACE_LIST_FAILED",
+                    "reason": "TShark could not list capture interfaces"}
+        matched = match_tshark_interface(aliases[0], parse_tshark_interfaces(listing.stdout))
+        return {**executable, **matched} if matched["status"] == "READY" else matched
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {"status": "SKIPPED_TSHARK_INTERFACE_RESOLUTION_FAILED",
+                "reason": "capture-interface resolution failed"}
 
 
 def _config(config: dict[str, Any]) -> dict[str, Any]:
@@ -458,6 +604,9 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     print(f"Session directory: {session}", flush=True)
     atomic_json(raw / "input-manifest.private.json", {"manifest": original, "endpoint_address": args.endpoint_address,
                                                        "bind_address": args.bind_address, "port": args.port})
+    capture_setup = resolve_capture_setup(args.bind_address, args.tshark_path,
+                                          args.tshark_interface, args.no_tshark)
+    atomic_json(raw / "capture-setup.private.json", capture_setup)
     build = build_and_verify(serial, source, args.build, args.install, raw)
     probe = f"probe-{int(time.time())}"
     launch_android(serial, probe, probe, settings["transport"], args.network_ordinal, "probe")
@@ -470,7 +619,8 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     summary: dict[str, Any] = {"schema": 1, "preset": settings["preset"], "transport": settings["transport"],
         "source_build": build, "device_context": context, "budgets": settings["budgets"],
         "failure_policy": "continue" if args.continue_on_failure else settings["failure_policy"],
-        "pair_seed": settings["pair_seed"], "evidence_boundary": {
+        "pair_seed": settings["pair_seed"], "capture_setup": redact_private(capture_setup),
+        "evidence_boundary": {
             "acceptance_readback": "reported separately per run",
             "sender_transport_effect": UNVERIFIED, "integrity_recovery": "split per run",
             "physical_benefit": UNVERIFIED, "tcp_info_rtt": "not independent RTT evidence",
@@ -500,24 +650,26 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                 idle_path.write_text("ping collection timed out\n", encoding="utf-8")
                 idle_result = {"method": "adb_shell_ping_round_trip", "status": "UNAVAILABLE_TIMEOUT"}
         capture: OptionalProcess | None = None
-        capture_status = "SKIPPED_NOT_REQUESTED"
-        if args.tshark_interface:
-            tshark = shutil.which("tshark")
-            if tshark:
-                try:
-                    capture = OptionalProcess([tshark, "-i", args.tshark_interface, "-f",
-                        f"tcp port {args.port} and host {args.bind_address}", "-w", str(run_dir / "sender.private.pcapng"), "-q"],
-                        run_dir / "tshark.private.log")
-                    time.sleep(0.5)
-                    if capture.process.poll() is None:
-                        capture_status = "RECORDED_PENDING_REVIEW"
-                    else:
-                        capture.stop(interrupt=False); capture = None
-                        capture_status = "SKIPPED_TSHARK_START_FAILED"
-                except OSError:
+        capture_status = capture_setup["status"]
+        capture_reason = capture_setup.get("reason")
+        if capture_setup["status"] == "READY":
+            try:
+                capture = OptionalProcess([capture_setup["tshark_path"], "-i",
+                    capture_setup["capture_interface"], "-f",
+                    f"tcp port {args.port} and host {args.bind_address}", "-w",
+                    str(run_dir / "sender.private.pcapng"), "-q"],
+                    run_dir / "tshark.private.log")
+                time.sleep(0.5)
+                if capture.process.poll() is None:
+                    capture_status = "RECORDED_PENDING_REVIEW"
+                    capture_reason = None
+                else:
+                    capture.stop(interrupt=False); capture = None
                     capture_status = "SKIPPED_TSHARK_START_FAILED"
-            else:
-                capture_status = "SKIPPED_TSHARK_UNAVAILABLE"
+                    capture_reason = "TShark exited before the owned endpoint started"
+            except OSError:
+                capture_status = "SKIPPED_TSHARK_START_FAILED"
+                capture_reason = "TShark could not start"
         endpoint = EndpointProcess(args.bind_address, args.port, expected_bytes,
                                    min(300, int(config["durationMs"]) // 1000 + 30), run_dir / "endpoint.private.jsonl")
         load_ping: OptionalProcess | None = None
@@ -559,7 +711,8 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             "expected_bytes": expected_bytes, "expected_sha256": expected_hash,
             "phone": phone, "endpoint": endpoint_result, "rtt": {"method": "adb_shell_ping_round_trip",
                 "idle": idle_result, "under_load": load_result, "interpretation": "independent round-trip observation; not one-way queue delay"},
-            "capture": {"status": capture_status, "transport_effect": UNVERIFIED}, "evidence_layers": layers}
+            "capture": {"status": capture_status, "reason": capture_reason,
+                "transport_effect": UNVERIFIED}, "evidence_layers": layers}
         atomic_json(run_dir / "record.private.json", result)
         redacted = redact_private(result)
         summary["runs"].append(redacted)
@@ -592,7 +745,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--network-ordinal", type=int, default=-1, help="Zero-based eligible transport Network when Android reports ambiguity")
     result.add_argument("--build", action="store_true", help="Build and record the current clean debug APK")
     result.add_argument("--install", action="store_true", help="Build if needed and install the exact debug APK")
-    result.add_argument("--tshark-interface", help="Owner sender interface; capture remains under ignored raw output")
+    result.add_argument("--tshark-path", help="Explicit TShark executable; PATH is still probed first")
+    result.add_argument("--tshark-interface", help="Stable TShark interface name override for ambiguous cases; numeric indexes are rejected")
+    result.add_argument("--no-tshark", action="store_true", help="Disable the default optional sender-capture attempt")
     result.add_argument("--continue-on-failure", action="store_true")
     result.add_argument("--allow-emulator", action="store_true", help="Lifecycle testing only; never physical efficacy")
     return result
@@ -604,14 +759,12 @@ def main() -> int:
     if not 1 <= args.port <= 65535:
         raise SystemExit("--port outside 1..65535")
     try:
-        endpoint_ip = ipaddress.ip_address(args.endpoint_address)
-        bind_ip = ipaddress.ip_address(args.bind_address)
+        ipaddress.ip_address(args.endpoint_address)
+        ipaddress.ip_address(args.bind_address)
     except ValueError:
         raise SystemExit("endpoint and bind addresses must be numeric IP literals")
     if "%" in args.endpoint_address or "%" in args.bind_address:
         raise SystemExit("scoped addresses are not supported")
-    if args.tshark_interface and bind_ip.is_unspecified:
-        raise SystemExit("TShark requires a specific --bind-address for the owned-flow filter")
     try:
         session, summary = run_batch(args)
     except Stage1Error as exc:

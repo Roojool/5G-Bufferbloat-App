@@ -306,13 +306,23 @@ $env:STAGE1_ENDPOINT_IP = "<numeric address of this owner-controlled host>"
 py -3 tools\stage1_batch.py --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --build --install
 ```
 
-Add `--tshark-interface "<owner sender interface>"` to request a private capture.
+On Windows, the normal command automatically attempts private sender capture.
+Discovery probes `PATH` first, then honors `--tshark-path`, then checks standard
+Wireshark installation locations including Program Files. The orchestrator maps
+the selected local bind address to its Windows adapter and matches that adapter
+to the stable name reported by `tshark -D`; it never stores or depends on the
+transient numeric index. Use `--tshark-interface "<stable name>"` only when that
+mapping is ambiguous, `--tshark-path "<executable>"` for a nonstandard install,
+or `--no-tshark` to disable the optional attempt. Paths and interface identifiers
+remain only in ignored private records.
+
 TShark starts before the endpoint and uses a capture filter restricted to the
-owned endpoint host and test TCP port. Missing/unstartable TShark records SKIPPED
-and leaves sender-window evidence UNVERIFIED. The manifest records independent
-adb-shell ping round-trip collection before and during load; its method and
-sample summary are retained separately. TCP_INFO RTT never substitutes for it,
-and neither method is interpreted as one-way queue delay.
+owned endpoint host and test TCP port. Missing/unstartable TShark or failed/
+ambiguous interface resolution records a clear SKIPPED reason and leaves sender-
+window evidence UNVERIFIED without changing transfer conclusions. The manifest
+records independent adb-shell ping round-trip collection before and during load;
+its method and sample summary are retained separately. TCP_INFO RTT never
+substitutes for it, and neither method is interpreted as one-way queue delay.
 
 Tracked presets:
 
@@ -325,7 +335,8 @@ Tracked presets:
 Every session checkpoints private input, endpoint output, phone records, RTT text
 and optional pcap under ignored `output/stage1/<session>/raw/`. The separate
 `redacted-summary.json` excludes endpoints, ports, Network handles/ordinals,
-capture paths/interfaces, precise location, credentials and device/ADB IDs.
+TShark executable/capture-interface/adapter identifiers, capture paths, precise
+location, credentials and device/ADB IDs.
 Option acceptance/readback, sender transport effect, integrity/recovery and
 physical benefit are separate fields. Exact endpoint+phone byte/hash agreement
 can mark only that transfer's integrity. A capture is pending review, and physical
@@ -449,6 +460,37 @@ MediaTek across two OEM/kernel contexts. Later: broader Android/carrier/family,
 transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memory/
 thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
 Wi-Fi results above are not a device-family, carrier or efficacy success.
+
+### Literal Windows capture-discovery follow-up validation (2026-09-12; no capture)
+
+Updated open PR #6 on `codex/stage1-batch-automation`; the follow-up commit and
+CI URL accompany the task report. The implementation/test/docs delta contains no
+app or native file change from the prior PR head. Local Windows/JDK 21 validation:
+
+```text
+python -m unittest discover -s tools -p "test_*.py" -v
+Ran 18 tests in 2.042s
+OK
+
+capture_setup_status=READY
+tshark_source=WINDOWS_STANDARD_INSTALL
+interface_source=WINDOWS_BIND_ADAPTER_MATCH
+
+gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 23s
+136 actionable tasks: 16 executed, 120 up-to-date
+JVM XML: tests=44 failures=0 errors=0 skipped=0
+Lint errors=0
+Lint warnings=66
+```
+
+The discovery-only probe used the selected local Wi-Fi bind address and installed
+TShark, but started no capture, endpoint or phone experiment. It establishes host
+discovery/interface-resolution behavior only. Sender-window evidence and all
+physical transport/latency conclusions remain **UNVERIFIED — REQUIRES PHYSICAL
+EXPERIMENT**. `verify_harness_build.py` again selected NDK 28.2.13676358 for all
+three debug/release ABIs, found the harness ON only in debug, and passed both
+packaging/manifest gates.
 
 ### Literal batch-automation validation (2026-09-12; no physical run)
 

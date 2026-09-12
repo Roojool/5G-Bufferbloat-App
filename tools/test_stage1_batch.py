@@ -1,6 +1,8 @@
 import copy
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -50,14 +52,102 @@ class Stage1BatchTests(unittest.TestCase):
 
     def test_redaction_removes_private_values_recursively(self):
         private = {"address": "192.0.2.1", "serial": "secret", "nested": [{"network_handle": 55,
-                   "capture_path": "x.pcapng", "safe": 7}], "physical_benefit": stage1_batch.UNVERIFIED}
+                   "capture_path": "x.pcapng", "tshark_path": "private-tshark.exe",
+                   "capture_interface": "private-interface", "adapter_alias": "Wi-Fi", "safe": 7}],
+                   "physical_benefit": stage1_batch.UNVERIFIED}
         redacted = stage1_batch.redact_private(private)
         text = json.dumps(redacted)
         self.assertNotIn("192.0.2.1", text)
         self.assertNotIn("secret", text)
         self.assertNotIn("x.pcapng", text)
+        self.assertNotIn("private-tshark.exe", text)
+        self.assertNotIn("private-interface", text)
+        self.assertNotIn("Wi-Fi", text)
         self.assertEqual(7, redacted["nested"][0]["safe"])
         self.assertEqual(stage1_batch.UNVERIFIED, redacted["physical_benefit"])
+
+    def test_tshark_path_discovery_is_first_lookup(self):
+        calls = []
+        def which(name):
+            calls.append(name)
+            return "/opt/bin/tshark" if name == "tshark" else None
+        result = stage1_batch.discover_tshark(which=which, windows=False)
+        self.assertEqual("READY", result["status"])
+        self.assertEqual("PATH", result["source"])
+        self.assertEqual("/opt/bin/tshark", result["tshark_path"])
+        self.assertEqual(["tshark"], calls)
+
+    def test_tshark_windows_standard_install_fallback(self):
+        expected = r"C:\Program Files\Wireshark\tshark.exe"
+        result = stage1_batch.discover_tshark(
+            which=lambda name: None,
+            environ={"ProgramFiles": r"C:\Program Files"},
+            is_file=lambda path: path == expected,
+            windows=True,
+        )
+        self.assertEqual("READY", result["status"])
+        self.assertEqual("WINDOWS_STANDARD_INSTALL", result["source"])
+        self.assertEqual(expected, result["tshark_path"])
+
+    def test_explicit_tshark_path_override_wins_after_path_probe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            explicit = Path(temp) / "tshark.exe"
+            explicit.write_bytes(b"")
+            calls = []
+            def which(name):
+                calls.append(name)
+                return "/path/tshark"
+            result = stage1_batch.discover_tshark(str(explicit), which=which, windows=False)
+            self.assertEqual("EXPLICIT", result["source"])
+            self.assertEqual(os.path.abspath(explicit), result["tshark_path"])
+            self.assertEqual(["tshark"], calls)
+
+    def test_windows_wifi_interface_resolves_from_bind_address(self):
+        tshark = r"C:\Program Files\Wireshark\tshark.exe"
+        adapter_json = json.dumps([
+            {"InterfaceAlias": "Ethernet", "InterfaceIndex": 3, "IPAddress": "192.0.2.20"},
+            {"InterfaceAlias": "Wi-Fi", "InterfaceIndex": 11, "IPAddress": "192.0.2.10"},
+        ])
+        interfaces = "1. \\Device\\NPF_{ETHERNET} (Ethernet)\n4. \\Device\\NPF_{WIFI} (Wi-Fi)\n"
+        def which(name):
+            return tshark if name == "tshark" else "powershell.exe"
+        def run(args, **unused):
+            output = interfaces if args[-1] == "-D" else adapter_json
+            return subprocess.CompletedProcess(args, 0, output, "")
+        result = stage1_batch.resolve_capture_setup(
+            "192.0.2.10", None, None, False, command_fn=run, which=which, windows=True)
+        self.assertEqual("READY", result["status"])
+        self.assertEqual("PATH", result["source"])
+        self.assertEqual("WINDOWS_BIND_ADAPTER_MATCH", result["interface_source"])
+        self.assertEqual(r"\Device\NPF_{WIFI}", result["capture_interface"])
+        self.assertFalse(result["capture_interface"].isdecimal())
+
+    def test_tshark_interface_ambiguity_and_no_match_are_skipped(self):
+        duplicate = stage1_batch.match_tshark_interface("Wi-Fi", [
+            {"capture_interface": r"\Device\NPF_{ONE}", "display_name": "Wi-Fi"},
+            {"capture_interface": r"\Device\NPF_{TWO}", "display_name": "Wi-Fi"},
+        ])
+        missing = stage1_batch.match_tshark_interface("Wi-Fi", [
+            {"capture_interface": r"\Device\NPF_{ONE}", "display_name": "Ethernet"},
+        ])
+        self.assertEqual("SKIPPED_TSHARK_INTERFACE_AMBIGUOUS", duplicate["status"])
+        self.assertEqual("SKIPPED_TSHARK_INTERFACE_NO_MATCH", missing["status"])
+        self.assertTrue(duplicate["reason"])
+        expected = "a" * 64
+        phone = {"status": "RESULT", "result": {"outcome": "COMPLETE", "bytes": 5,
+                 "sha256": expected, "options": []}}
+        endpoint = {"outcome": "COMPLETE", "accepted_bytes": 5, "sha256": expected}
+        transfer = stage1_batch.classify_result(phone, endpoint, 5, expected, {})
+        self.assertEqual("SCREEN_COMPLETE", transfer["run_status"])
+        self.assertEqual(stage1_batch.UNVERIFIED, transfer["sender_transport_effect"])
+
+    def test_numeric_tshark_interface_override_is_rejected(self):
+        result = stage1_batch.resolve_capture_setup(
+            "192.0.2.10", None, "4", False,
+            which=lambda name: "/opt/tshark" if name == "tshark" else None,
+            windows=True,
+        )
+        self.assertEqual("SKIPPED_TSHARK_NUMERIC_INTERFACE_REJECTED", result["status"])
 
     def test_hash_match_never_promotes_transport_or_benefit(self):
         expected = "a" * 64
