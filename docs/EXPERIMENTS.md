@@ -172,8 +172,9 @@ default 60; no-progress timeout 0.5..30 seconds, default 10. Expected data
 The owner must enforce the proposed 1 GiB session allowance or a smaller chosen
 allowance; there is no automated aggregate-session budget in this first harness.
 
-Results distinguish compiled constants, set errno (null = not attempted), get
-errno, requested value, actual readback and length. Baseline writes neither
+Results distinguish compiled constants, set/get errno (null = not attempted),
+requested value, actual readback and length. An absent constant never fabricates
+a syscall errno; incomplete integer readbacks remain unavailable. Baseline writes neither
 receive option. Failed optional sets do not interrupt safe socket operation,
 but invalidate that control variant. COMPLETE means expected count plus EOF,
 not independently verified integrity. DEADLINE, STALL_TIMEOUT, EARLY_EOF,
@@ -331,8 +332,8 @@ URL accompany the final task report. Local Windows/JDK 21 validation:
 
 ```text
 gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
-BUILD SUCCESSFUL in 16s
-136 actionable tasks: 29 executed, 107 up-to-date
+BUILD SUCCESSFUL in 15s
+136 actionable tasks: 33 executed, 103 up-to-date
 JVM XML totals: tests=42, failures=0, errors=0, skipped=0
 New ExperimentTest: 10 tests, failures=0
 python -m unittest discover -s tools -p test_socket_endpoint.py -v
@@ -357,7 +358,7 @@ tests executed directly after accepting the emulator's Android VPN consent:
 am instrument -w com.bufferbloatshaper.test/androidx.test.runner.AndroidJUnitRunner
 com.bufferbloatshaper.harness.SocketHarnessInstrumentationTest:.....
 com.bufferbloatshaper.nativeengine.NativeEngineInstrumentationTest:.
-Time: 0.233
+Time: 0.234
 OK (6 tests)
 ```
 

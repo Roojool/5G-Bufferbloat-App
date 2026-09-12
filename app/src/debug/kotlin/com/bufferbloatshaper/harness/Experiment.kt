@@ -36,14 +36,14 @@ data class ExperimentConfig(
 
 const val UNVERIFIED = "UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT"
 data class OptionRecord(val atMs: Long, val phase: String, val kind: String, val requested: Int?,
-    val constantAvailable: Boolean, val setErrno: Int?, val getErrno: Int,
+    val constantAvailable: Boolean, val setErrno: Int?, val getErrno: Int?,
     val returned: Long?, val returnedLength: Long) {
     companion object {
         fun decode(at: Long, phase: String, kind: Int, requested: Int?, raw: LongArray): OptionRecord {
             require(raw.size == 5)
             return OptionRecord(at, phase, if (kind == 0) "SO_RCVBUF" else "TCP_WINDOW_CLAMP",
-                requested, raw[0] == 1L, raw[1].takeIf { it >= 0 }?.toInt(), raw[2].toInt(),
-                raw[3].takeIf { raw[2] == 0L && it >= 0 }, raw[4])
+                requested, raw[0] == 1L, raw[1].takeIf { it >= 0 }?.toInt(), raw[2].takeIf { it >= 0 }?.toInt(),
+                raw[3].takeIf { raw[0] == 1L && raw[2] == 0L && raw[4] == 4L && it >= 0 }, raw[4])
         }
     }
 }

@@ -32,7 +32,7 @@ fun ExperimentResult.toJson(config: ExperimentConfig): String = JSONObject().app
     put("options", JSONArray().apply { options.forEach { o -> put(JSONObject().apply {
         put("at_ms", o.atMs); put("phase", o.phase); put("kind", o.kind)
         put("requested", o.requested ?: JSONObject.NULL); put("constant_available", o.constantAvailable)
-        put("set_errno", o.setErrno ?: JSONObject.NULL); put("get_errno", o.getErrno)
+        put("set_errno", o.setErrno ?: JSONObject.NULL); put("get_errno", o.getErrno ?: JSONObject.NULL)
         put("returned", o.returned ?: JSONObject.NULL); put("returned_length", o.returnedLength)
     }) } })
     put("samples", JSONArray().apply { samples.forEach { s -> put(JSONObject().apply {

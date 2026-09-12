@@ -83,7 +83,7 @@ JNI(jlongArray) METHOD(option)(JNIEnv* env, jobject, jint fd, jint kind, jboolea
         available = false;
 #endif
     } else if (kind != 0) available = false;
-    if (!available) return longs(env, {0, -1, ENOPROTOOPT, -1, 0});
+    if (!available) return longs(env, {0, -1, -1, -1, 0}); // no syscall attempted, no fabricated errno
     int setError = -1;
     if (set) setError = setsockopt(fd, level, option, &requested, sizeof(requested)) == 0 ? 0 : errno;
     int value = 0; socklen_t length = sizeof(value);

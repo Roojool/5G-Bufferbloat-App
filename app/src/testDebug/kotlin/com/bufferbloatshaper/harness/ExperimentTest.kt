@@ -98,8 +98,10 @@ class ExperimentTest {
     @Test fun failedAndUnavailableOptionsDoNotBecomeSuccessfulReadbacks() {
         val failed = OptionRecord.decode(0, "test", 1, 100, longArrayOf(1, 22, 92, 0, 4))
         assertEquals(22, failed.setErrno); assertEquals(92, failed.getErrno); assertNull(failed.returned)
-        val unsupported = OptionRecord.decode(0, "test", 1, null, longArrayOf(0, -1, 92, -1, 0))
+        val unsupported = OptionRecord.decode(0, "test", 1, null, longArrayOf(0, -1, -1, -1, 0))
         assertFalse(unsupported.constantAvailable); assertNull(unsupported.setErrno)
+        assertNull(unsupported.getErrno)
+        assertNull(OptionRecord.decode(0, "test", 0, null, longArrayOf(1, -1, 0, 8192, 2)).returned)
         val doubled = OptionRecord.decode(0, "test", 0, 4096, longArrayOf(1, 0, 0, 8192, 4))
         assertEquals(4096, doubled.requested); assertEquals(8192L, doubled.returned)
     }
