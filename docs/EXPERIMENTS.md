@@ -299,13 +299,35 @@ Prepare if the batch reports CONSENT_REQUIRED:
 adb shell am start -n com.bufferbloatshaper/.harness.HarnessActivity
 ```
 
-After that consent and Wi-Fi connection, one Windows/PowerShell command builds,
-installs, starts/stops the endpoint for every variant and saves each result:
+After that consent and Wi-Fi connection, use the stateless operator. Every
+preflight/run command requires the endpoint, local bind address and port again,
+plus explicit confirmation for that invocation. Preflight installs/verifies the
+current build and probes the current device/transport without transferring
+experiment data. Run rediscovers them and starts/stops the endpoint for every
+variant; it does not reuse preflight selections:
 
 ```powershell
 $env:STAGE1_ENDPOINT_IP = "<numeric address of this owner-controlled host>"
-py -3 tools\stage1_batch.py --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --build --install
+py -3 tools\operator.py preflight --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --confirm-endpoint-bind --build --install
+py -3 tools\operator.py run --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --confirm-endpoint-bind
+py -3 tools\operator.py report --session output\stage1\<session-directory>
 ```
+
+The operator exposes only `wifi-screen`, `wifi-efficacy` and `cellular-paired`;
+custom manifests remain a lower-level engineering interface. Zero attached
+authorized devices blocks. Multiple devices require `--serial` on that same
+preflight/run invocation. An ambiguous current Android transport requires a
+current `--network-ordinal`; neither selection carries forward. Cellular runs
+require a globally routable numeric endpoint and reject private-LAN endpoint
+assumptions, though a separately confirmed local bind address may sit behind an
+owner-managed mapping. Reports contain only allowlisted status/evidence fields,
+end with `AWAITING_REVIEWER_CONCLUSION`, and never infer Stage pass/fail or efficacy.
+
+Operator exit codes are: 0 command completed, 2 blocked prerequisite (also
+argparse input errors), 3 failed/inconclusive experiment, 70 tooling or evidence-
+data failure, and 130 owner abort. Exit 0 means the command/bounded runs completed;
+it is not a Stage or efficacy verdict. Raw/private data and every failure remain
+under ignored output; generated operator reports are redacted.
 
 On Windows, the normal command automatically attempts private sender capture.
 Discovery probes `PATH` first, then honors `--tshark-path`, then checks standard
@@ -590,6 +612,57 @@ MediaTek across two OEM/kernel contexts. Later: broader Android/carrier/family,
 transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memory/
 thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
 Wi-Fi results above are not a device-family, carrier or efficacy success.
+
+### Literal stateless-operator validation (2026-09-14; no physical run)
+
+Implemented on `codex/stage1-operator` from current main
+`ce4d9b8553eb6d658802a7846dc60234d0ab6c39` (merged PR #6). The final commit,
+PR and CI accompany the task report. No ADB experiment command, endpoint,
+capture or existing physical session was run/read/changed. Local Windows/JDK 21:
+
+```text
+py -3 -m unittest discover -s tools -p 'test_*.py' -v
+Ran 65 tests in 3.917s
+OK
+
+gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 1m 6s
+136 actionable tasks: 21 executed, 115 up-to-date
+JVM XML: tests=44 failures=0 errors=0 skipped=0
+Lint errors=0
+Lint warnings=66
+
+py -3 tools/verify_harness_build.py
+debug/release selected NDK 28.2.13676358 on all three ABIs
+debug harness=ON; release harness=OFF; both packaging/manifest gates PASS
+
+py -3 tools/operator.py --help
+exit=0; commands={preflight,run,report}
+
+operator run without --confirm-endpoint-bind: exit=2
+operator cellular run with private endpoint: exit=2
+Markdown local links: checked=88 broken=0
+App/native delta: EMPTY
+Tracked output files: 0
+Builder.establish additions: 0
+gVisor dependency additions: 0
+```
+
+The first verifier invocation failed before verification because the requested
+`tools/operator.py` filename shadowed Python's standard-library `operator`
+module when a sibling tool imported `pathlib`. The module-load compatibility
+shim corrected that concrete issue; the subsequent verifier and direct tool
+help invocations passed.
+
+All 65 Python tests executed; thirteen are focused operator tests using mocks,
+temporary directories and synthetic summaries. JVM tests, most build work and
+instrumentation compilation were UP-TO-DATE; 21 Gradle tasks executed, including
+native configure/build work, manifest processing, lint models and release
+packaging. The existing SDK XML version warning appeared and did not fail the
+build. No instrumentation test executed. Source/build success establishes only
+the stateless wrapper, report redaction and retained debug/release gates. Device,
+transport and endpoint rediscovery remain unverified on a live owner session;
+Stage 1 remains UNPASSED.
 
 ### Literal load-RTT retention validation (2026-09-13; no physical run)
 
