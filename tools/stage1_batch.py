@@ -10,6 +10,7 @@ import base64
 import hashlib
 import ipaddress
 import json
+import math
 import ntpath
 import os
 from pathlib import Path
@@ -448,15 +449,18 @@ class EndpointProcess:
 class OptionalProcess:
     def __init__(self, args: list[str], output: Path):
         self.output = output
+        self.stop_requested = False
         self.stream = output.open("w", encoding="utf-8")
         self.process = subprocess.Popen(args, cwd=ROOT, stdout=self.stream, stderr=subprocess.STDOUT, text=True)
 
     def stop(self, interrupt: bool = True) -> int:
         if self.process.poll() is None and interrupt:
+            self.stop_requested = True
             self.process.terminate()
         try:
             code = self.process.wait(5)
         except subprocess.TimeoutExpired:
+            self.stop_requested = True
             self.process.kill()
             code = self.process.wait(3)
         self.stream.close()
@@ -621,16 +625,49 @@ def ping_command(serial: str, address: str, count: int, interval_ms: int) -> lis
     return ["adb", "-s", serial, "shell", "ping", "-n", "-c", str(count), "-i", f"{interval_ms / 1000:.3f}", address]
 
 
-def ping_summary(path: Path, returncode: int | None) -> dict[str, Any]:
+def ping_summary(path: Path, returncode: int | None, requested_count: int | None = None,
+                 *, stopped_reason: str | None = None) -> dict[str, Any]:
+    """Export only observed RTTs/counts, including replies before an early stop."""
     text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
-    packets = re.search(r"(\d+) packets transmitted, (\d+) (?:packets )?received", text)
-    timing = re.search(r"=\s*([0-9.]+)/([0-9.]+)/([0-9.]+)/(?:[0-9.]+)\s*ms", text)
-    result: dict[str, Any] = {"method": "adb_shell_ping_round_trip", "status": "RECORDED" if returncode == 0 else "UNAVAILABLE"}
+    number = r"\d+(?:\.\d+)?"
+    packets = re.search(r"(?m)^\s*(\d+) packets transmitted, (\d+) (?:packets )?received\b", text)
+    timing = re.search(rf"(?m)^\s*(?:rtt|round-trip) [^=\r\n]+ =\s*({number})/({number})/({number})(?:/{number})?\s*ms\s*$", text)
+    replies = []
+    for match in re.finditer(rf"(?m)^\s*\d+ bytes from [^\r\n]+\bicmp_seq[= ]\d+\b[^\r\n]*\btime=({number})\s+ms(?:\s|$)", text):
+        value = float(match.group(1))
+        if math.isfinite(value):
+            replies.append(value)
+    result: dict[str, Any] = {"method": "adb_shell_ping_round_trip", "status": "UNAVAILABLE",
+        "requested_samples": requested_count, "observed_replies": len(replies), "returncode": returncode,
+        "completion_reason": stopped_reason or ("NORMAL_COMPLETION" if returncode == 0 else "PING_FAILED")}
     if packets:
         result.update({"transmitted": int(packets.group(1)), "received": int(packets.group(2))})
-    if timing:
-        result.update({"min_ms": float(timing.group(1)), "avg_ms": float(timing.group(2)), "max_ms": float(timing.group(3))})
+    stats = [float(timing.group(i)) for i in (1, 2, 3)] if timing else []
+    summary_usable = (bool(stats) and all(math.isfinite(value) for value in stats)
+                      and stats[0] <= stats[1] <= stats[2] and packets is not None
+                      and 0 < result["received"] <= result["transmitted"])
+    if summary_usable:
+        result.update(dict(zip(("min_ms", "avg_ms", "max_ms"), stats)))
+        result.update({"observed_replies": result["received"], "statistics_source": "PING_SUMMARY"})
+    elif replies:
+        result.update({"min_ms": min(replies), "avg_ms": sum(value / len(replies) for value in replies),
+                       "max_ms": max(replies), "statistics_source": "REPLY_LINES"})
+    if summary_usable and returncode == 0 and (stopped_reason is None or result["transmitted"] == requested_count):
+        result.update({"status": "RECORDED", "completion_reason": "NORMAL_COMPLETION"})
+    elif result["observed_replies"] > 0 and stopped_reason == "TRANSFER_ENDED":
+        result["status"] = "RECORDED_PARTIAL"
+    if result["observed_replies"] == 0:
+        result["observation_reason"] = "NO_USABLE_REPLIES"
     return result
+
+
+def load_ping_summary(collector: OptionalProcess, returncode: int, requested_count: int,
+                      phone: dict[str, Any] | None) -> dict[str, Any]:
+    reason = None
+    if collector.stop_requested:
+        status = (phone or {}).get("status")
+        reason = {"RESULT": "TRANSFER_ENDED", "OWNER_ABORTED": "OWNER_ABORTED"}.get(status, "RUN_FAILED")
+    return ping_summary(collector.output, returncode, requested_count, stopped_reason=reason)
 
 
 def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
@@ -693,7 +730,7 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                 idle = command(ping_command(serial, args.endpoint_address, int(rtt["idle_count"]), int(rtt["interval_ms"])),
                                timeout=max(15, int(rtt["idle_count"]) * int(rtt["interval_ms"]) / 1000 + 10), check=False)
                 idle_path.write_text(idle.stdout + idle.stderr, encoding="utf-8")
-                idle_result = ping_summary(idle_path, idle.returncode)
+                idle_result = ping_summary(idle_path, idle.returncode, int(rtt["idle_count"]))
             except subprocess.TimeoutExpired:
                 idle_path.write_text("ping collection timed out\n", encoding="utf-8")
                 idle_result = {"method": "adb_shell_ping_round_trip", "status": "UNAVAILABLE_TIMEOUT"}
@@ -755,7 +792,8 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             if capture:
                 capture.stop()
             adb(serial, "shell", "run-as", PACKAGE, "rm", "-f", f"files/stage1_batch/{token}.json", check=False)
-        load_result = ping_summary(run_dir / "rtt-load.private.txt", load_code) if load_ping else {"method": "none", "status": "SKIPPED"}
+        load_result = (load_ping_summary(load_ping, load_code, int(rtt["load_count"]), phone)
+                       if load_ping else {"method": "none", "status": "SKIPPED"})
         layers = classify_result(phone, endpoint_result, expected_bytes, expected_hash, config)
         try:
             transport = stage1_capture.analyze_capture(capture_setup.get("tshark_path"),

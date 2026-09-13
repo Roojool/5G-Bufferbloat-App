@@ -335,6 +335,23 @@ records independent adb-shell ping round-trip collection before and during load;
 its method and sample summary are retained separately. TCP_INFO RTT never
 substitutes for it, and neither method is interpreted as one-way queue delay.
 
+Independent ping records `requested_samples`, `observed_replies`, observed
+`min_ms`/`avg_ms`/`max_ms`, `statistics_source`, process `returncode` and an explicit
+`completion_reason`. Normal completion with usable summary statistics remains
+RECORDED / NORMAL_COMPLETION. When run-result cleanup intentionally stops a
+still-running load ping, usable replies remain RECORDED_PARTIAL / TRANSFER_ENDED;
+reply-line RTTs are parsed even if ping never emitted its final summary. This
+applies to both `wifi-efficacy` and `cellular-paired` without preset changes.
+Valid summary statistics/counts take precedence; otherwise only exact numeric
+reply RTTs are counted (malformed values and `time<...` bounds are not samples).
+`transmitted` and `received` are included only if actually reported in a packet
+summary; absent summaries never imply transmitted count, loss or missing samples.
+No usable replies remain UNAVAILABLE. Unexpected ping failure, host failure and
+owner abort remain UNAVAILABLE with PING_FAILED, RUN_FAILED or OWNER_ABORTED
+reasons; any parsed observations are retained. These summaries describe only
+the collected interval, not a full-duration trial or a latency-benefit result.
+Raw RTT text stays private; previous physical records are not rewritten.
+
 Tracked presets:
 
 | Preset | Contents and policy |
@@ -573,6 +590,38 @@ MediaTek across two OEM/kernel contexts. Later: broader Android/carrier/family,
 transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memory/
 thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
 Wi-Fi results above are not a device-family, carrier or efficacy success.
+
+### Literal load-RTT retention validation (2026-09-13; no physical run)
+
+This host-only follow-up to PR #6 preserves replies when transfer completion
+stops the load ping before its requested count. All fixtures are synthetic;
+existing physical records and `output/` are untouched. Local Windows/JDK 21:
+
+```text
+py -3 -m unittest discover -s tools -p 'test_*.py' -v
+Ran 52 tests in 2.715s
+OK
+
+gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 28s
+136 actionable tasks: 16 executed, 120 up-to-date
+JVM XML: tests=44 failures=0 errors=0 skipped=0
+Lint errors=0
+Lint warnings=66
+Markdown local links: checked=88 broken=0
+App/native delta: EMPTY
+Tracked output files: 0
+```
+
+The 52 Python tests executed, including twelve new RTT tests. JVM tests, lint
+analysis and instrumentation compilation were UP-TO-DATE; no device or
+instrumentation test executed. Gradle emitted the existing SDK XML version
+warning. `py -3 tools/verify_harness_build.py` passed both packaging/manifest
+gates and verified selected NDK 28.2.13676358 on every debug/release ABI, harness
+ON only in debug. `git diff --check` passed. Both longer presets retain partial
+replies in mocked cleanup tests; physical retention and latency benefit remain
+unverified. No existing session was reanalyzed. Stage 1 remains UNPASSED; final
+commit/PR and CI results accompany the task report.
 
 ### Literal capture-analysis follow-up validation (2026-09-13; offline only)
 

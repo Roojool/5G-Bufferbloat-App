@@ -2,8 +2,11 @@
 
 Snapshot: 2026-09-13. The Stage 1 automation in open PR #6 starts from current
 main `2f59669389be2bd89fa1c29f655327d47fa7d1e2` (merged PR #5), on
-`codex/stage1-batch-automation`. This follow-up adds graceful TShark shutdown and
-offline sender-transport analysis of an already recorded physical batch. The protected-socket
+`codex/stage1-batch-automation`. This follow-up retains independent load-ping
+replies when a transfer ends before the requested ping count. It changes only
+host RTT accounting/tests and affected documentation; existing physical evidence
+is untouched and no physical experiment or offline session analysis is run.
+Earlier follow-ups added graceful TShark shutdown and offline sender analysis. The protected-socket
 harness and its first owner Wi-Fi evidence are checked-in dependencies, not
 copied from an unmerged branch. The exact follow-up commit and CI results
 accompany the task report. Unrelated ignored local artifacts are preserved.
@@ -72,6 +75,12 @@ upload; upload itself is not proven by this task.
   terminate/kill fallback. Post-capture/offline analysis derives header-only
   window, ACK/data and recovery observations with explicit partial-file/coverage
   status; original physical records remain unchanged and output stays ignored.
+  Independent ping now retains normal completion as RECORDED and observed
+  replies after intentional transfer-end cleanup as RECORDED_PARTIAL, even
+  without a final summary. Requested/observed counts, observed min/avg/max and
+  completion reason are explicit; missing summary counts/loss are not inferred.
+  No usable replies remain UNAVAILABLE. TCP_INFO RTT stays separate and no
+  latency-benefit conclusion is generated.
 - Production directional configuration still requires both positive limits.
   Its independent capability model remains Stage 3 work. Kotlin queues,
   calibration and validation remain disconnected scaffolding.
@@ -92,8 +101,9 @@ counts and executed versus cached task evidence are recorded in EXPERIMENTS and
 the task/PR report. No build, emulator or option success passes a physical gate.
 The first owner phone report and subsequent batch establish only their recorded
 Wi-Fi acceptance, integrity and scoped transport observations; neither passes
-Stage 1. Python tests execute without a device/live capture; existing PCAPs are
-read offline. Graceful live Windows capture shutdown remains physically untested.
+Stage 1. Python tests execute without a device/live capture; this RTT follow-up
+does not read or rewrite existing physical sessions. Graceful live Windows capture
+shutdown and partial load-ping retention still need later physical validation.
 Current main has successful CI; PR #6 remains open and unmerged. Live protection
 required `Build, unit test, and lint`, zero approving reviews, no force-push;
 this task changes no protection and does not merge its PR.

@@ -179,6 +179,16 @@ Windows bind-adapter-to-TShark interface resolution. Ambiguous/no-match capture
 is a skipped evidence layer. These tests do not execute a physical network
 experiment or capture.
 
+Independent RTT tests cover complete ping summaries, reply-line parsing after
+intentional transfer-end cleanup, malformed/non-finite RTTs, absent summaries,
+zero usable replies, already-completed processes, bounded cleanup fallback,
+abort/failure reasons and redaction. Both longer presets exercise this shared
+path with mocked processes. RECORDED_PARTIAL retains observed load RTTs when
+the transfer ends early; it does not invent loss/transmission counts or turn a
+short interval into a full trial. Normal completion stays RECORDED, no usable
+replies stay UNAVAILABLE, and TCP_INFO RTT remains a separate observation.
+These deterministic checks do not establish physical retention or latency benefit.
+
 Capture tests additionally cover Windows graceful control signals and bounded
 hard fallback, metadata-derived IPv4/IPv6 direction, window-scale math, sequence
 wrap, missing fields, truncated/malformed file prefixes, incomplete tails,
