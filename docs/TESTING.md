@@ -47,10 +47,11 @@ Use the Compatibility report issue form for a shareable record.
 
 Use a per-run record in [Experiments](EXPERIMENTS.md) with hypothesis, exact
 commit, device, Android/kernel, SoC/OEM, network, procedure, literal redacted
-output, conclusion and verification scope. Two initial one-phone Wi-Fi runs now
-establish only baseline/receive-buffer acceptance, readback and transfer
-integrity for their stated setup; the mechanism and benefit experiments remain
-unrun or unverified as recorded there.
+output, conclusion and verification scope. The reviewed one-device Wi-Fi records
+now establish baseline/receive-buffer acceptance, readback, transfer integrity
+and strong sender-visible receive-window control for their stated scopes. The
+physical bufferbloat-benefit experiment remains inconclusive/unverified as
+recorded there.
 
 | Category | What it can establish | What it cannot establish alone |
 |---|---|---|
@@ -154,9 +155,13 @@ Stage 1 remains UNPASSED. The first owner Wi-Fi baseline and SO_RCVBUF=65536
 runs establish the narrow acceptance/readback and exact transfer-integrity scope
 recorded there. A later ten-run wifi-screen batch adds scoped sender-window and
 zero-window/recovery observations, with two truncated captures and other missing
-tail coverage retained explicitly. Repeatable throughput control, loaded-latency
-benefit, cellular efficacy and broader compatibility remain UNVERIFIED — REQUIRES
-PHYSICAL EXPERIMENT. Keep these conclusions separate.
+tail coverage retained explicitly. A later complete-capture 128 MiB fixed-order
+pair adds strong sender-visible receive-window control evidence with integrity
+and a modest arithmetic-derived candidate throughput reduction. It did not show
+baseline loaded-latency inflation; its loaded RTT samples ended partially with
+the transfers. Repeatable efficacy, loaded-latency benefit, cellular efficacy
+and broader compatibility remain UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT.
+Keep these conclusions separate.
 
 Alongside the four required Gradle tasks, run:
 

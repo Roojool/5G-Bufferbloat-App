@@ -19,7 +19,7 @@ The project can never guarantee identical behavior on every Android build, modem
 | Compile/target SDK | API 35, as configured in the app |
 | Kotlin/JVM build runtime | JDK 21 is the supported build runtime |
 | Native ABIs | A safe, unavailable JNI stub is configured for `arm64-v8a`, `armeabi-v7a`, and `x86_64`; it does not relay packets |
-| Physical-device confidence | Initial narrow Wi-Fi screens plus one ten-run arm64/API 31 no-route batch establish integrity and scoped sender-window/recovery observations, with capture gaps; efficacy and general compatibility are not established |
+| Physical-device confidence | One-device Wi-Fi screens, a ten-run batch and a complete-capture 128 MiB pair establish integrity and strong scoped sender-visible receive-window control; efficacy and general compatibility are not established |
 | IPv4 traffic | The checked-in service fails closed before capturing routes because no verified native engine exists |
 | IPv6 traffic | Not supported; no native IPv6 forwarding path is implemented |
 | TCP download shaping | Not implemented/verified as a production capability |
@@ -39,7 +39,7 @@ submission policy is recorded separately in [Play Compliance](PLAY_COMPLIANCE.md
 | IPv6 forwarding | Not implemented; future IPv4-only path allows bypass | Early dual-stack/IPv6-only evidence before whole-device claims |
 | TCP upload pacing/fairness/backpressure | Disconnected Kotlin references only | Bounded buffers, byte integrity and physical load evidence |
 | TCP download control | Experimental proposal; no implementation | Protected-socket effect and physical latency/throughput evidence |
-| TCP_WINDOW_CLAMP / TCP_INFO | Narrow arm64/Wi-Fi runtime probes and exact integrity, plus scoped window differences/recovery in the later batch; two captures truncated and other tails incomplete (EXPERIMENTS) | Repeatable sender response, benefit and cellular evidence still required |
+| TCP_WINDOW_CLAMP / TCP_INFO | Narrow arm64/API 31/Wi-Fi runtime probes and exact integrity; the complete-capture efficacy pair adds strong sender-visible receive-window control for that scope, while the earlier batch retains capture gaps (EXPERIMENTS) | Repeated/randomized efficacy, benefit and cellular evidence still required |
 | Adaptive autorate | Not implemented | Independent delay/load, stability and safe fallback evidence |
 | OEM tuning / Radio Advisor | Planned later; not implemented | Common correctness first, then scoped performance/permission evidence |
 
