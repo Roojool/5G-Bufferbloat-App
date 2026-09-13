@@ -99,6 +99,9 @@ python -m unittest discover -s tools -p "test_*.py" -v
 Release assembly is an unsigned packaging regression check, not distribution.
 The debug-only harness has its own JNI library and cannot establish a route.
 Launch and owner-run procedures are in [Experiments](EXPERIMENTS.md).
+The separate debug `harness.stream` F-03 runner is exercised by
+`testDebugUnitTest`; it opens no socket and is absent from release source. Its
+tests are deterministic source evidence, not physical pacing or forwarding.
 For emulator-only execution use `:app:connectedDebugAndroidTest`; see
 [Testing](TESTING.md) for the optional prepared-service API test and exact evidence
 boundary. CI compiles instrumentation and runs no external-network tests.

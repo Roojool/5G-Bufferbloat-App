@@ -37,7 +37,7 @@ submission policy is recorded separately in [Play Compliance](PLAY_COMPLIANCE.md
 | Stub packaging / pre-route unavailable check | Source and CI evidence; no real traffic | Maintain negative lifecycle/ABI tests |
 | IPv4 TCP and UDP/QUIC forwarding | Not implemented | Mandatory integrity/protection/lifecycle tests |
 | IPv6 forwarding | Not implemented; future IPv4-only path allows bypass | Early dual-stack/IPv6-only evidence before whole-device claims |
-| TCP upload pacing/fairness/backpressure | Disconnected Kotlin references only | Bounded buffers, byte integrity and physical load evidence |
+| TCP upload pacing/fairness/backpressure | Debug-only deterministic stream runner passes bounded buffering, ordered integrity, pacing, fairness, backpressure and teardown unit cases; no live socket or forwarding path | Controlled protected-socket/kernel-buffer evidence, then forwarding and physical load evidence |
 | TCP download control | Experimental proposal; no implementation | Protected-socket effect and physical latency/throughput evidence |
 | SO_RCVBUF / TCP_WINDOW_CLAMP / TCP_INFO | Narrow arm64/API 31/Wi-Fi runtime probes and exact integrity. The complete-capture efficacy pair specifically tested SO_RCVBUF=65536 and adds strong sender-visible receive-window control for that scope. The earlier ten-run batch separately provides TCP_WINDOW_CLAMP window/recovery observations with retained capture gaps (EXPERIMENTS). | Repeated/randomized efficacy, benefit and cellular evidence still required |
 | Adaptive autorate | Not implemented | Independent delay/load, stability and safe fallback evidence |
