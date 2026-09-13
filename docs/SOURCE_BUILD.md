@@ -124,3 +124,14 @@ The first build records the current clean Git SHA and APK hash below ignored
 runs may omit `--build --install` only while that current-commit provenance and
 installed APK still match. This is source/build identity evidence, not physical
 socket-control evidence.
+
+Offline analysis of an already recorded session requires only Python and TShark;
+it does not build/install, invoke ADB, connect an endpoint or start a capture:
+
+```powershell
+py -3 tools\stage1_capture.py --session output\stage1\20260913-100214-wifi-screen-d2a05965
+```
+
+Original files remain intact; the separate redacted transport summary and private
+field/diagnostic files stay under ignored output. See EXPERIMENTS for partial
+capture semantics and the physical evidence boundary.

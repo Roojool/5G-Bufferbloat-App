@@ -1,9 +1,9 @@
 # Current Project Context
 
-Snapshot: 2026-09-12. The Stage 1 automation in open PR #6 starts from current
+Snapshot: 2026-09-13. The Stage 1 automation in open PR #6 starts from current
 main `2f59669389be2bd89fa1c29f655327d47fa7d1e2` (merged PR #5), on
-`codex/stage1-batch-automation`. This follow-up makes its optional Windows
-TShark discovery and capture-interface resolution robust. The protected-socket
+`codex/stage1-batch-automation`. This follow-up adds graceful TShark shutdown and
+offline sender-transport analysis of an already recorded physical batch. The protected-socket
 harness and its first owner Wi-Fi evidence are checked-in dependencies, not
 copied from an unmerged branch. The exact follow-up commit and CI results
 accompany the task report. Unrelated ignored local artifacts are preserved.
@@ -23,10 +23,14 @@ AQM, autorate, gVisor, TUN forwarding or production capability framework.
 Wi-Fi Network completed the baseline and SO_RCVBUF=65536 transfers with exact
 byte/hash integrity. The buffer request was accepted and read back as 131072;
 TCP_INFO calls succeeded with length 232 and the documented fields available.
-Sender-observed window control, useful throttling, deliberate stall/zero-window
-recovery, loaded-latency benefit, cellular efficacy and general OEM support are
-**UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**. Next: paired Wi-Fi sender-capture
-and independent timing, then cellular runs following [Experiments](EXPERIMENTS.md).
+A subsequent ten-run physical wifi-screen batch on `d2a0596538a284ca1740c5ab787dde1f2bddd340`
+has exact count/hash integrity on all runs. Offline sender analysis establishes
+window observations and scoped zero-window/reopen/recovery. Eight captures parse
+to EOF, two are truncated; only three include the full payload ACK/end coverage.
+Useful repeatable throttling, loaded-latency benefit, cellular efficacy and general
+OEM support remain **UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**. Next: review the
+retained transport/timing evidence before longer paired Wi-Fi and cellular runs
+following [Experiments](EXPERIMENTS.md). No physical run was repeated in this task.
 Negative download evidence may narrow the product to independently proven
 upload; upload itself is not proven by this task.
 
@@ -47,11 +51,12 @@ upload; upload itself is not proven by this task.
   polling; worker finally closes exactly once. Result storage is bounded.
 - F-01 records option availability, acceptance/errno and actual readback,
   timestamps, read cadence, bytes, SHA-256 and no-progress/recovery observations.
-  Higher evidence layers remain UNVERIFIED. Independent variants use new sockets.
+  Its own output does not establish sender transport effect. Independent variants
+  use new sockets; separate sender-capture analysis can add scoped observations.
 - F-02 extracts twelve compiled/length-present TCP_INFO fields into typed,
   redacted values. It neither controls rate nor identifies one-way radio delay.
 - Owner-run Python endpoint generates synthetic deterministic bytes only. No
-  project endpoint, application relay/proxy, packet capture, TLS interception,
+  project endpoint, application relay/proxy, in-app packet capture, TLS interception,
   telemetry or arbitrary payload inspection is added.
 - A host Python orchestrator and debug-only ADB Activity command surface can run
   manifest-defined fresh-socket experiments sequentially after manual consent.
@@ -63,6 +68,10 @@ upload; upload itself is not proven by this task.
   TShark interface name. Ambiguous/unavailable capture remains skipped and
   unverified. Capture and independent adb-shell ping observations never promote
   efficacy automatically, and interface identifiers/paths remain private.
+  TShark now receives a graceful control signal and bounded flush wait before
+  terminate/kill fallback. Post-capture/offline analysis derives header-only
+  window, ACK/data and recovery observations with explicit partial-file/coverage
+  status; original physical records remain unchanged and output stays ignored.
 - Production directional configuration still requires both positive limits.
   Its independent capability model remains Stage 3 work. Kotlin queues,
   calibration and validation remain disconnected scaffolding.
@@ -81,8 +90,10 @@ The task runs required assembly/JVM/lint checks, release packaging regression,
 endpoint/orchestrator unit tests, and instrumentation compilation. Literal
 counts and executed versus cached task evidence are recorded in EXPERIMENTS and
 the task/PR report. No build, emulator or option success passes a physical gate.
-The first owner phone report establishes only the exact Wi-Fi acceptance,
-readback and integrity scope recorded in EXPERIMENTS; it does not pass Stage 1.
+The first owner phone report and subsequent batch establish only their recorded
+Wi-Fi acceptance, integrity and scoped transport observations; neither passes
+Stage 1. Python tests execute without a device/live capture; existing PCAPs are
+read offline. Graceful live Windows capture shutdown remains physically untested.
 Current main has successful CI; PR #6 remains open and unmerged. Live protection
 required `Build, unit test, and lint`, zero approving reviews, no force-push;
 this task changes no protection and does not merge its PR.

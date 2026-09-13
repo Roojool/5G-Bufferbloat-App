@@ -200,6 +200,9 @@ can collect independent adb-shell ping and an optional flow-filtered TShark
 capture, and checkpoints raw/private files only below ignored `output/`. A
 separate allowlisted summary excludes endpoint/Network/device identifiers and
 keeps acceptance/readback, sender transport effect, integrity/recovery and
-physical benefit distinct. Captures remain pending review; automation never
-infers efficacy. Release excludes this seam. It implements neither production
+physical benefit distinct. TShark shutdown signals graceful capture-child cleanup
+before hard fallbacks. A host-only offline decoder selects direction from owned
+endpoint metadata, derives window/ACK/data observations, and marks incomplete
+captures/handshakes PARTIAL or SKIPPED. Derived summaries contain numeric/fixed
+status values only and never infer latency efficacy. Release excludes this seam. It implements neither production
 TCP leg and does not pass Stage 1. See [Experiments](EXPERIMENTS.md).

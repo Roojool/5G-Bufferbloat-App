@@ -23,7 +23,8 @@ Algorithm tests and lifecycle scaffolding are not a working shaper.
 
 ## Stage 1 — protected-socket / transport feasibility (in progress, UNPASSED)
 
-1. The debug-only no-route F-01/F-02 harness and reusable host batch automation
+1. The debug-only no-route F-01/F-02 harness, reusable host batch automation and
+   offline sender-capture analysis
    are implemented; execute their physical falsifiable procedures in
    [Experiments](EXPERIMENTS.md) before claiming this stage passed. Keep the
    ordinary app unavailable; a debug APK is not automatically an

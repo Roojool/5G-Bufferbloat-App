@@ -27,9 +27,10 @@ The following are release blockers, not caveats to hide from users:
 - The historical IPv6/DNS prototype routed IPv6 without a working forwarding path and changed resolver behavior. IPv6 routes and DNS substitution are now absent from the service; an IPv4-only engine must explicitly let IPv6 use Android's ordinary network until dual-stack forwarding passes tests. A native implementation must preserve normal resolver behavior before DNS interception is enabled.
 - TCP download shaping is unimplemented/unverified. The candidate control point
   is the protected remote-facing Android/Linux TCP socket, not only the separate
-  app-facing userspace endpoint. One narrow phone/Wi-Fi acceptance/readback and
-  integrity screen exists; TCP_WINDOW_CLAMP/TCP_INFO remain experiments without
-  sender-observed control, latency-benefit or broad compatibility evidence.
+  app-facing userspace endpoint. Narrow phone/Wi-Fi acceptance/readback,
+  integrity and sender-window/recovery observations exist, with capture gaps;
+  TCP_WINDOW_CLAMP/TCP_INFO remain experiments without repeatable throughput
+  control, latency-benefit or broad compatibility evidence.
 - Calibration does not yet take or persist independent physical-network measurements; automatic updates remain disabled rather than feeding shaped throughput back into its own limit.
 - Adaptive delay/load autorate is planned; a percentile/headroom calculation is
   not a working adaptive controller. No upload pacing/backpressure or packet AQM

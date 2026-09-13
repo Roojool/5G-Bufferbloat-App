@@ -152,9 +152,11 @@ Exact Wi-Fi-first/cellular-second owner instructions, JSON variants, field
 meanings and proposed screening criteria are in [Experiments](EXPERIMENTS.md).
 Stage 1 remains UNPASSED. The first owner Wi-Fi baseline and SO_RCVBUF=65536
 runs establish the narrow acceptance/readback and exact transfer-integrity scope
-recorded there. Sender-observed window/throughput, deliberate stall/zero-window
-recovery, loaded-latency benefit, cellular efficacy and broader compatibility
-remain UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT. Keep these conclusions separate.
+recorded there. A later ten-run wifi-screen batch adds scoped sender-window and
+zero-window/recovery observations, with two truncated captures and other missing
+tail coverage retained explicitly. Repeatable throughput control, loaded-latency
+benefit, cellular efficacy and broader compatibility remain UNVERIFIED — REQUIRES
+PHYSICAL EXPERIMENT. Keep these conclusions separate.
 
 Alongside the four required Gradle tasks, run:
 
@@ -176,6 +178,16 @@ failure cleanup, PATH/explicit/standard-install TShark discovery, and mocked
 Windows bind-adapter-to-TShark interface resolution. Ambiguous/no-match capture
 is a skipped evidence layer. These tests do not execute a physical network
 experiment or capture.
+
+Capture tests additionally cover Windows graceful control signals and bounded
+hard fallback, metadata-derived IPv4/IPv6 direction, window-scale math, sequence
+wrap, missing fields, truncated/malformed file prefixes, incomplete tails,
+redaction and separate offline outputs preserving original records. Existing
+physical sessions can be decoded with `py -3 tools/stage1_capture.py --session
+output/stage1/<session>` without ADB or live networking. COMPLETE decoder status
+does not prove lossless capture or efficacy. See EXPERIMENTS for definitions and
+the exact existing-session command. Live shutdown/flush effectiveness still needs
+owner evidence from a later authorized capture; mocked shutdown is not that proof.
 
 After one-time VPN consent, the host batch verifies a clean checkout containing
 current origin/main, an exact installed debug APK hash, one selected ADB target,

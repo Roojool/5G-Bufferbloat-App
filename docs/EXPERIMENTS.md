@@ -1,10 +1,11 @@
 # Engineering Experiments
 
 This is the home for literal feasibility, capability and performance evidence.
-Proposals are not results. As of 2026-09-12, two first-screen physical Wi-Fi runs
-are recorded for the debug-only F-01/F-02 no-route harness. They establish only
-the stated protected-socket transfer/integrity and runtime-probe observations.
-They do not verify physical socket-control efficacy.
+Proposals are not results. As of 2026-09-13, the two first-screen Wi-Fi runs and
+one ten-run physical wifi-screen batch are recorded for the debug-only F-01/F-02
+no-route harness. Offline analysis adds sender-visible window and recovery
+observations with explicit capture gaps. It establishes no latency benefit,
+cellular efficacy or production readiness; Stage 1 remains UNPASSED.
 Use [Testing](TESTING.md) for evidence categories and
 [Compatibility](COMPATIBILITY.md) for narrowly scoped support claims.
 
@@ -319,7 +320,17 @@ remain only in ignored private records.
 TShark starts before the endpoint and uses a capture filter restricted to the
 owned endpoint host and test TCP port. Missing/unstartable TShark or failed/
 ambiguous interface resolution records a clear SKIPPED reason and leaves sender-
-window evidence UNVERIFIED without changing transfer conclusions. The manifest
+window evidence UNVERIFIED without changing transfer conclusions. Normal cleanup
+now sends CTRL_BREAK_EVENT to a new Windows process group (SIGINT on Unix), waits
+up to ten seconds for TShark/dumpcap to finish, then uses terminate/five-second
+wait/kill only as fallbacks. The shutdown method and signal failure are recorded;
+neither a signal nor process exit alone proves file completeness. Capture also
+has duration (run allowance plus 30 seconds) and 524288 kB file autostop bounds.
+The Windows cleanup handler requests capture-child shutdown before exiting;
+see [TShark 4.6.8 source](https://github.com/wireshark/wireshark/blob/v4.6.8/tshark.c),
+[TShark autostop](https://www.wireshark.org/docs/man-pages/tshark), and
+[Python process-group signals](https://docs.python.org/3/library/subprocess.html).
+The manifest
 records independent adb-shell ping round-trip collection before and during load;
 its method and sample summary are retained separately. TCP_INFO RTT never
 substitutes for it, and neither method is interpreted as one-way queue delay.
@@ -339,8 +350,9 @@ TShark executable/capture-interface/adapter identifiers, capture paths, precise
 location, credentials and device/ADB IDs.
 Option acceptance/readback, sender transport effect, integrity/recovery and
 physical benefit are separate fields. Exact endpoint+phone byte/hash agreement
-can mark only that transfer's integrity. A capture is pending review, and physical
-benefit always remains UNVERIFIED until reviewed analysis supplies it.
+can mark only that transfer's integrity. Post-capture analysis can establish
+observations for captured packets only; physical benefit always remains
+UNVERIFIED until reviewed analysis supplies it.
 
 Manifest budgets cannot exceed 256 MiB/120 seconds per run or 1 GiB/one hour per
 batch and may be lower. Ctrl+C or creating `ABORT` in the printed session folder
@@ -348,6 +360,107 @@ signals cancellation; the existing worker retains sole FD ownership and closes
 it. Missing phone/build match/consent/network stops preflight. Endpoint or run
 failure is retained, then stop/continue follows the manifest/CLI policy. Raw
 artifacts are never deleted to hide contrary evidence.
+
+### Offline sender transport analysis (no experiment rerun)
+
+The batch now invokes `tools/stage1_capture.py` after capture cleanup. To process
+an existing session without ADB, consent, endpoint startup, or live capture:
+
+```powershell
+py -3 tools\stage1_capture.py --session output\stage1\20260913-100214-wifi-screen-d2a05965
+```
+
+The session must already exist below ignored `output/stage1`. Discovery shares
+the batch's PATH/Windows fallback and optional `--tshark-path`. The analyzer uses
+the recorded local endpoint bind address and port to identify the sender, then
+requires a single connection/peer. Multiple connections are SKIPPED; packet
+order never chooses direction. Only selected TCP/header fields are requested
+with name resolution disabled. Field TSVs and TShark diagnostics stay private.
+No original capture, manifest, phone record or summary is repaired or overwritten.
+The new `redacted-transport-summary.json` is separate from original evidence;
+each run also receives `transport-derived.private.json`. Capture/analyzer hashes
+and TShark version identify the input and decoder. No address, MAC, interface,
+port, capture path, ADB serial or arbitrary diagnostic string is exported.
+
+Derived data includes both SYN window-scale offers; receiver post-SYN ACK raw
+window and scaled rwnd min/median/max; zero-window frames and reopening episodes;
+TShark sender probe/retransmission frame counts and peak bytes in flight; and
+250 ms bins of sender payload bytes, receiver windows, ACK progression and
+advertised right edge. SYN windows are excluded from the window distribution.
+Scaling needs both captured handshake offers; an absent offer in a captured
+handshake means no scaling, while absent/truncated handshake or unsupported
+field means unavailable. ACK progression starts after the server ISN and may
+include one FIN sequence byte. Payload sums include retransmissions; they are
+not unique delivered bytes. Window median is packet-sampled, not time-weighted.
+[RFC 7323](https://www.rfc-editor.org/rfc/rfc7323.html)
+
+`READABLE_TO_EOF` describes file parsing only. Overall COMPLETE additionally needs
+the requested fields, usable handshake, payload ACK coverage and a FIN/RST;
+PARTIAL retains readable observations when any check is missing, the capture is
+truncated, packets are snaplen-truncated, or analysis exceeds its bounds.
+SKIPPED covers absent tool/capture, unsupported mandatory direction/window fields,
+ambiguous connections and unavailable analysis. Limits: 1 GiB input, 60-second
+packet dissection, 200000 decoded rows, 256 MiB field output and 600-second
+timeline. Missing values are null; supported but unobserved event counts can be
+zero only for the captured portion. A zero count never proves no event occurred
+outside it. Readable files and COMPLETE analysis do not establish losslessness.
+
+Bytes-in-flight, probes and retransmissions are TShark analysis observations;
+capture loss, ordering and host offload can affect them. They are not direct
+kernel counters or radio-airtime evidence. A reopened window followed by sender
+data and advancing ACKs supports recovery for that interval, without proving
+repeatability. Planned cadence changes are retained with an explicit separate-
+clock caveat. TCP_INFO RTT and independent ping remain separate; this analyzer
+does not calculate latency benefit or promote any other product capability.
+[Wireshark TCP analysis semantics](https://www.wireshark.org/docs/wsug_html_chunked/ChAdvTCPAnalysis.html)
+
+### F-01-WIFI-BATCH-01 — owner batch, offline review 2026-09-13
+
+**Status: verified for stated scope; incomplete capture coverage retained.**
+The owner ran one physical wifi-screen batch on implementation
+`d2a0596538a284ca1740c5ab787dde1f2bddd340`, debug/no-route, explicit Wi-Fi,
+arm64-v8a, Android 12/API 31, kernel 4.14.190-perf+, owned IPv4 LAN endpoint.
+No model, SoC, carrier, identifiers or precise location are inferred. The current
+task only processed those existing files with TShark 4.6.8; it ran no physical
+experiment. The run IDs below are the stored IDs without their common
+`wifi-screen-` prefix. All ten phone/endpoint records match 16777216 bytes and
+SHA-256 `287507f403176f1f5b22b9a4d9cb49f7d7f88ac19e406b5ae87ce109564846bd`.
+
+| Run | Parse / analysis | Scaled rwnd min / median / max (bytes) | Zero-window / probe / retransmission frames |
+|---|---|---|---|
+| baseline | readable / PARTIAL | 1499136 / 1572864 / 1572864 | 0 / 0 / 0 |
+| rcvbuf-16384 | truncated / PARTIAL | 0 / 21720 / 23360 | 38 / 0 / 2 |
+| rcvbuf-65536 | truncated / PARTIAL | 21680 / 96000 / 96000 | 0 / 0 / 0 |
+| rcvbuf-262144 | readable / PARTIAL | 87600 / 390912 / 390912 | 0 / 0 / 0 |
+| clamp-16384 | readable / PARTIAL | 16060 / 16060 / 16060 | 0 / 0 / 0 |
+| clamp-65536 | readable / PARTIAL | 64240 / 65536 / 65536 | 0 / 0 / 0 |
+| clamp-262144 | readable / PARTIAL | 87600 / 262144 / 262144 | 0 / 0 / 0 |
+| cadence-5ms | readable / COMPLETE | 0 / 49152 / 1572864 | 32 / 0 / 1 |
+| cadence-50ms | readable / COMPLETE | 0 / 53248 / 1572864 | 94 / 30 / 87 |
+| read-withholding-recovery | readable / COMPLETE | 0 / 45056 / 1572864 | 58 / 3 / 5 |
+
+All ten contain both scale offers. Receiver shifts, in table order, are
+12, 0, 1, 3, 0, 1, 3, 12, 12, 12. Eight captures parse to EOF; receive-buffer
+16384 and 65536 have a damaged final block and retain only the readable prefix.
+The first seven runs lack the final expected payload ACK, even where a FIN/RST
+is present, so their analysis remains PARTIAL. This does not negate separately
+verified phone/endpoint stream integrity. Counts above describe captured frames
+only, and no PCAP repair or deletion was performed.
+
+In the withholding run, phone cadence events occurred at 5025 ms (2000 ms cadence)
+and 7025 ms (5 ms cadence). Capture-relative observations show zero window at
+5.475132 s, positive window at 7.176171 s, sender data at 7.176282 s and ACK
+advance at 7.188721 s. This supports a withholding/reopen/recovery observation in
+this run; the clocks are not synchronized precisely. All capture/decoder hashes
+and the full numeric progression remain in the ignored derived session records.
+
+These captures establish sender-visible window differences and scoped recovery
+observations beyond option acceptance/readback. One fixed-order batch does not
+prove repeatable causal throughput control, bufferbloat benefit, cellular efficacy,
+general OEM support, integrated forwarding or production readiness. Those remain
+UNVERIFIED; Stage 1 is UNPASSED. Next, review these retained traces and independent
+RTT adequacy before planning a longer paired Wi-Fi benefit experiment. No repeat
+experiment was authorized or run in this follow-up.
 
 ### Manual fallback procedure
 
@@ -460,6 +573,37 @@ MediaTek across two OEM/kernel contexts. Later: broader Android/carrier/family,
 transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memory/
 thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
 Wi-Fi results above are not a device-family, carrier or efficacy success.
+
+### Literal capture-analysis follow-up validation (2026-09-13; offline only)
+
+```text
+py -3 -m unittest discover -s tools -p 'test_*.py' -v
+Ran 40 tests in 2.604s
+OK
+
+py -3 tools/stage1_capture.py --session output/stage1/20260913-100214-wifi-screen-d2a05965
+Offline transport analysis: {"COMPLETE": 3, "PARTIAL": 7}
+Physical benefit: UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT
+Original session files unchanged: 86
+Transfer integrity verified: 10
+Readable capture files: 8
+TShark versions: ['4.6.8']
+
+gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 23s
+136 actionable tasks: 16 executed, 120 up-to-date
+Markdown local links: checked=88 broken=0
+App/native delta: EMPTY
+Tracked output files: 0
+```
+
+The 86 original-session file hashes matched before/after offline processing.
+Python tests executed; JVM tests/lint analysis and instrumentation compilation
+were up-to-date in this host-only follow-up. No instrumentation/device test or
+live capture was executed. `verify_harness_build.py` passed debug/release gates
+with NDK 28.2.13676358 on all ABIs and the harness ON only in debug. The final
+commit/PR and CI results accompany the task report. Live graceful shutdown
+effectiveness still requires evidence from a later authorized physical capture.
 
 ### Literal Windows capture-discovery follow-up validation (2026-09-12; no capture)
 

@@ -16,6 +16,7 @@ from pathlib import Path
 import random
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -23,6 +24,7 @@ import time
 from typing import Any, Callable
 
 import socket_endpoint
+import stage1_capture
 
 ROOT = Path(__file__).resolve().parents[1]
 PRESETS = ROOT / "tools" / "stage1_presets"
@@ -461,6 +463,52 @@ class OptionalProcess:
         return code
 
 
+class CaptureProcess(OptionalProcess):
+    """Give TShark/dumpcap time to close PCAPNG before any hard fallback."""
+
+    def __init__(self, args: list[str], output: Path):
+        self.output = output
+        self.stream = output.open("w", encoding="utf-8")
+        self.shutdown: dict[str, Any] | None = None
+        kwargs = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}
+        try:
+            self.process = subprocess.Popen(args, cwd=ROOT, stdout=self.stream,
+                                            stderr=subprocess.STDOUT, **kwargs)
+        except BaseException:
+            self.stream.close()
+            raise
+
+    def stop(self, interrupt: bool = True) -> int:
+        if self.shutdown is not None:
+            return self.shutdown["returncode"]
+        method = "ALREADY_EXITED"
+        signal_failed = False
+        try:
+            if self.process.poll() is None:
+                method = "GRACEFUL_SIGNAL"
+                try:
+                    self.process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+                except OSError:
+                    signal_failed = True
+                try:
+                    self.process.wait(10)
+                except subprocess.TimeoutExpired:
+                    method = "TERMINATE_FALLBACK"
+                    self.process.terminate()
+                    try:
+                        self.process.wait(5)
+                    except subprocess.TimeoutExpired:
+                        method = "KILL_FALLBACK"
+                        self.process.kill()
+                        self.process.wait(3)
+            code = self.process.wait()
+            self.shutdown = {"method": method, "signal_failed": signal_failed,
+                             "returncode": code, "flush_status": "UNVERIFIED_UNTIL_CAPTURE_PARSE"}
+            return code
+        finally:
+            self.stream.close()
+
+
 def adb(serial: str, *args: str, timeout: float = 60, check: bool = True) -> subprocess.CompletedProcess[str]:
     return command(["adb", "-s", serial, *args], timeout=timeout, check=check)
 
@@ -649,35 +697,37 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             except subprocess.TimeoutExpired:
                 idle_path.write_text("ping collection timed out\n", encoding="utf-8")
                 idle_result = {"method": "adb_shell_ping_round_trip", "status": "UNAVAILABLE_TIMEOUT"}
-        capture: OptionalProcess | None = None
+        capture: CaptureProcess | None = None
         capture_status = capture_setup["status"]
         capture_reason = capture_setup.get("reason")
-        if capture_setup["status"] == "READY":
-            try:
-                capture = OptionalProcess([capture_setup["tshark_path"], "-i",
-                    capture_setup["capture_interface"], "-f",
-                    f"tcp port {args.port} and host {args.bind_address}", "-w",
-                    str(run_dir / "sender.private.pcapng"), "-q"],
-                    run_dir / "tshark.private.log")
-                time.sleep(0.5)
-                if capture.process.poll() is None:
-                    capture_status = "RECORDED_PENDING_REVIEW"
-                    capture_reason = None
-                else:
-                    capture.stop(interrupt=False); capture = None
-                    capture_status = "SKIPPED_TSHARK_START_FAILED"
-                    capture_reason = "TShark exited before the owned endpoint started"
-            except OSError:
-                capture_status = "SKIPPED_TSHARK_START_FAILED"
-                capture_reason = "TShark could not start"
-        endpoint = EndpointProcess(args.bind_address, args.port, expected_bytes,
-                                   min(300, int(config["durationMs"]) // 1000 + 30), run_dir / "endpoint.private.jsonl")
+        endpoint: EndpointProcess | None = None
         load_ping: OptionalProcess | None = None
         phone: dict[str, Any] | None = None
         endpoint_result: dict[str, Any] | None = None
         aborted = False
         token = f"r-{hashlib.sha256((session_name + run['run_id']).encode()).hexdigest()[:16]}"
         try:
+            if capture_setup["status"] == "READY":
+                try:
+                    capture = CaptureProcess([capture_setup["tshark_path"], "-i",
+                        capture_setup["capture_interface"], "-f",
+                        f"tcp port {args.port} and host {args.bind_address}", "-w",
+                        str(run_dir / "sender.private.pcapng"), "-a",
+                        f"duration:{int(config['durationMs']) // 1000 + 30}",
+                        "-a", "filesize:524288", "-q"], run_dir / "tshark.private.log")
+                    time.sleep(0.5)
+                    if capture.process.poll() is None:
+                        capture_status = "RECORDED_PENDING_REVIEW"
+                        capture_reason = None
+                    else:
+                        capture.stop(interrupt=False)
+                        capture_status = "SKIPPED_TSHARK_START_FAILED"
+                        capture_reason = "TShark exited before the owned endpoint started"
+                except OSError:
+                    capture_status = "SKIPPED_TSHARK_START_FAILED"
+                    capture_reason = "TShark could not start"
+            endpoint = EndpointProcess(args.bind_address, args.port, expected_bytes,
+                                       min(300, int(config["durationMs"]) // 1000 + 30), run_dir / "endpoint.private.jsonl")
             endpoint.wait_ready()
             if rtt.get("method") == "adb_shell_ping" and int(rtt.get("load_count", 0)) > 0:
                 load_ping = OptionalProcess(ping_command(serial, args.endpoint_address, int(rtt["load_count"]), int(rtt["interval_ms"])),
@@ -694,25 +744,36 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             cancel_android(serial, run["run_id"])
             phone = {"status": "OWNER_ABORTED"}
             aborted = True
-        except (Stage1Error, subprocess.TimeoutExpired) as exc:
+        except (Stage1Error, subprocess.TimeoutExpired, OSError) as exc:
             cancel_android(serial, run["run_id"])
             phone = {"status": "HOST_FAILURE", "reason": type(exc).__name__}
         finally:
-            endpoint.stop()
-            endpoint_result = endpoint.final()
+            if endpoint:
+                endpoint.stop()
+                endpoint_result = endpoint.final()
             load_code = load_ping.stop() if load_ping else None
             if capture:
                 capture.stop()
             adb(serial, "shell", "run-as", PACKAGE, "rm", "-f", f"files/stage1_batch/{token}.json", check=False)
         load_result = ping_summary(run_dir / "rtt-load.private.txt", load_code) if load_ping else {"method": "none", "status": "SKIPPED"}
         layers = classify_result(phone, endpoint_result, expected_bytes, expected_hash, config)
+        try:
+            transport = stage1_capture.analyze_capture(capture_setup.get("tshark_path"),
+                run_dir / "sender.private.pcapng", args.bind_address, args.port, run_dir, expected_bytes)
+        except KeyboardInterrupt:
+            transport = stage1_capture.skipped("OWNER_ABORTED_ANALYSIS")
+            aborted = True  # still checkpoint the completed transfer below
+        transport["planned_cadence"] = stage1_capture.cadence_plan(config)
+        atomic_json(run_dir / "transport-derived.private.json", transport)
+        layers["sender_transport_effect"] = transport["evidence_layers"]["sender_transport_effect"]
         result = {"run_id": run["run_id"], "variant": run["variant"],
             "pair": run.get("pair"), "order": run.get("order"), "run_status": layers["run_status"],
             "expected_bytes": expected_bytes, "expected_sha256": expected_hash,
             "phone": phone, "endpoint": endpoint_result, "rtt": {"method": "adb_shell_ping_round_trip",
                 "idle": idle_result, "under_load": load_result, "interpretation": "independent round-trip observation; not one-way queue delay"},
             "capture": {"status": capture_status, "reason": capture_reason,
-                "transport_effect": UNVERIFIED}, "evidence_layers": layers}
+                "shutdown": capture.shutdown if capture else None,
+                "transport_effect": layers["sender_transport_effect"], "derived": transport}, "evidence_layers": layers}
         atomic_json(run_dir / "record.private.json", result)
         redacted = redact_private(result)
         summary["runs"].append(redacted)
