@@ -1,15 +1,12 @@
 # Current Project Context
 
-Snapshot: 2026-09-13. The Stage 1 automation in open PR #6 starts from current
-main `2f59669389be2bd89fa1c29f655327d47fa7d1e2` (merged PR #5), on
-`codex/stage1-batch-automation`. This follow-up retains independent load-ping
-replies when a transfer ends before the requested ping count. It changes only
-host RTT accounting/tests and affected documentation; existing physical evidence
-is untouched and no physical experiment or offline session analysis is run.
-Earlier follow-ups added graceful TShark shutdown and offline sender analysis. The protected-socket
-harness and its first owner Wi-Fi evidence are checked-in dependencies, not
-copied from an unmerged branch. The exact follow-up commit and CI results
-accompany the task report. Unrelated ignored local artifacts are preserved.
+Snapshot: 2026-09-14. Current main is
+`ce4d9b8553eb6d658802a7846dc60234d0ab6c39`, the merge of PR #6, with the
+protected-socket harness, host batch/capture tooling and recorded Wi-Fi evidence
+checked in. Work on `codex/stage1-operator` adds a stateless, low-friction host
+operator around those reviewed tools. It changes no Android/native/production
+networking behavior or physical evidence and runs no physical experiment. The
+exact implementation commit, PR and validation accompany the task report.
 
 ## Reconciliation and next gate
 
@@ -81,6 +78,18 @@ upload; upload itself is not proven by this task.
   completion reason are explicit; missing summary counts/loss are not inferred.
   No usable replies remain UNAVAILABLE. TCP_INFO RTT stays separate and no
   latency-benefit conclusion is generated.
+- `tools/operator.py` provides stateless `preflight`, `run` and `report`
+  commands over the three reviewed presets. Every preflight/run invocation
+  requires current endpoint/bind/port confirmation, discovers the currently
+  attached device, and probes the requested Android transport; run then delegates
+  to the existing batch path, which re-resolves Network per fresh socket. It
+  retains existing bounds, abort/failure records and private/redacted storage.
+  Cellular use rejects a private/non-global endpoint. Reports use a strict
+  allowlist, make no Stage/efficacy conclusion, and end awaiting reviewer judgment.
+  They include only broad target kind, numeric Android release/API level,
+  allowlisted ABI and numeric kernel family from the already-redacted device
+  context, plus the two fixed session-relative redacted artifact filenames.
+  Arbitrary runtime strings and raw/private paths are never rendered.
 - Production directional configuration still requires both positive limits.
   Its independent capability model remains Stage 3 work. Kotlin queues,
   calibration and validation remain disconnected scaffolding.
@@ -96,17 +105,17 @@ NDK's source.properties, independently of merely installing that package.
 No Go/gVisor version is pinned or integrated; its old CMake switch still fails.
 
 The task runs required assembly/JVM/lint checks, release packaging regression,
-endpoint/orchestrator unit tests, and instrumentation compilation. Literal
-counts and executed versus cached task evidence are recorded in EXPERIMENTS and
-the task/PR report. No build, emulator or option success passes a physical gate.
+endpoint/orchestrator/operator unit tests, and instrumentation compilation.
+Literal counts and executed versus cached task evidence are recorded in
+EXPERIMENTS and the task/PR report. No build, emulator or option success passes a physical gate.
 The first owner phone report and subsequent batch establish only their recorded
 Wi-Fi acceptance, integrity and scoped transport observations; neither passes
-Stage 1. Python tests execute without a device/live capture; this RTT follow-up
-does not read or rewrite existing physical sessions. Graceful live Windows capture
-shutdown and partial load-ping retention still need later physical validation.
-Current main has successful CI; PR #6 remains open and unmerged. Live protection
-required `Build, unit test, and lint`, zero approving reviews, no force-push;
-this task changes no protection and does not merge its PR.
+Stage 1. Python operator tests use mocks and synthetic summaries without a device,
+network, live capture or existing physical session. Graceful live Windows capture
+shutdown, operator workflow and partial load-ping retention still need later
+physical validation. Current main and merged PR #6 have successful CI. Live
+protection requires `Build, unit test, and lint`, zero approving reviews and no
+force-push; this task changes no protection and does not merge its PR.
 
 ## Documentation hierarchy
 

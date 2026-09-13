@@ -179,6 +179,19 @@ Windows bind-adapter-to-TShark interface resolution. Ambiguous/no-match capture
 is a skipped evidence layer. These tests do not execute a physical network
 experiment or capture.
 
+Operator tests cover reviewed-preset restriction, required per-invocation
+endpoint/bind confirmation, rejection of private cellular endpoints, transport-
+preset matching, zero/multiple/current device behavior, fresh device/Network
+probe calls, non-reuse of endpoint arguments, strict report allowlisting and all
+documented exit classes. They use mocks and synthetic summaries only. The
+operator delegates experiment execution and capture analysis to the existing
+Stage 1 modules; it adds no second experiment implementation. Its report ending
+`AWAITING_REVIEWER_CONCLUSION` is an explicit human gate, not a failed result.
+Focused report tests also prove that only the allowlisted broad runtime scope is
+rendered, private decoys and arbitrary kernel suffixes are absent, artifact
+references are fixed session-relative redacted filenames, and consecutive run
+calls pass only their own invocation arguments to the existing batch path.
+
 Independent RTT tests cover complete ping summaries, reply-line parsing after
 intentional transfer-end cleanup, malformed/non-finite RTTs, absent summaries,
 zero usable replies, already-completed processes, bounded cleanup fallback,

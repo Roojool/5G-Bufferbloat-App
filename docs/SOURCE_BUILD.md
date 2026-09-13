@@ -105,14 +105,26 @@ boundary. CI compiles instrumentation and runs no external-network tests.
 
 For a physical Wi-Fi screen on Windows, connect exactly one authorized phone,
 make the owner endpoint address reachable on that Wi-Fi, complete the one-time
-consent described in EXPERIMENTS, then run from a clean checkout:
+consent described in EXPERIMENTS, then use the stateless operator from a clean
+checkout. It requires the target values again on each environment check/run:
 
 ```powershell
 $env:STAGE1_ENDPOINT_IP = "<numeric address of this owner-controlled host>"
-py -3 tools\stage1_batch.py --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --build --install
+py -3 tools\operator.py preflight --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --confirm-endpoint-bind --build --install
+py -3 tools\operator.py run --preset wifi-screen --transport wifi --endpoint-address $env:STAGE1_ENDPOINT_IP --bind-address $env:STAGE1_ENDPOINT_IP --port 39001 --confirm-endpoint-bind
+py -3 tools\operator.py report --session output\stage1\<session-directory>
 ```
 
-On Windows this command automatically probes TShark in `PATH` and standard
+Only reviewed presets are available through `operator.py`. Use `--serial` on
+each invocation if multiple authorized devices are attached, and a current
+`--network-ordinal` if Android reports ambiguous matching Networks. Cellular
+requires a globally routable endpoint; the operator rejects private-LAN endpoint
+assumptions. Exit codes: 0 completed command, 2 blocked prerequisite/input,
+3 failed or inconclusive experiment, 70 tooling/evidence-data failure, and
+130 owner abort. A zero exit is not an efficacy or Stage-pass conclusion;
+operator reports always end `AWAITING_REVIEWER_CONCLUSION`.
+
+On Windows the operator run automatically probes TShark in `PATH` and standard
 Wireshark install locations, including Program Files, then maps the local bind
 address's Windows adapter to a stable `tshark -D` interface name. It never uses
 a numeric capture index. For an unusual install use `--tshark-path`; for an
