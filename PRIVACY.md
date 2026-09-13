@@ -31,9 +31,14 @@ to a numeric test endpoint explicitly supplied by the owner. It creates no VPN
 route and reads only the owner-requested synthetic test transfer; it does not
 capture other apps' traffic. It computes byte counts and SHA-256 incrementally,
 and reads socket-option/TCP_INFO observations. No payload is retained in results.
-Address/port and selected Network remain transient input and are not exported.
-Bounded results remain in memory until the owner explicitly saves redacted JSON
-through Android's document picker; there is no automatic upload. The chosen
+In the manual UI, address/port and selected Network remain transient input and
+are not exported. Host batch automation stores its input manifest, endpoint logs,
+optional sender capture and RTT command output only below the repository's
+git-ignored local `output/stage1/` tree. It separately writes an allowlisted
+summary without endpoint addresses/ports, Network handles, capture paths,
+precise location, credentials or device/ADB identifiers. Bounded Android results
+remain app-private until the host retrieves them or the owner explicitly saves
+manual redacted JSON; there is no automatic upload. The chosen
 endpoint sees the connection and its ordinary network metadata. The project
 operates no endpoint. Release APKs exclude this internal harness. See
 [Experiments](docs/EXPERIMENTS.md) for bounds and owner data-cost controls.

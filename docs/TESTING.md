@@ -152,16 +152,18 @@ Exact Wi-Fi-first/cellular-second owner instructions, JSON variants, field
 meanings and proposed screening criteria are in [Experiments](EXPERIMENTS.md).
 Stage 1 remains UNPASSED. The first owner Wi-Fi baseline and SO_RCVBUF=65536
 runs establish the narrow acceptance/readback and exact transfer-integrity scope
-recorded there. Sender-observed window/throughput, deliberate stall/zero-window
-recovery, loaded-latency benefit, cellular efficacy and broader compatibility
-remain UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT. Keep these conclusions separate.
+recorded there. A later ten-run wifi-screen batch adds scoped sender-window and
+zero-window/recovery observations, with two truncated captures and other missing
+tail coverage retained explicitly. Repeatable throughput control, loaded-latency
+benefit, cellular efficacy and broader compatibility remain UNVERIFIED — REQUIRES
+PHYSICAL EXPERIMENT. Keep these conclusions separate.
 
 Alongside the four required Gradle tasks, run:
 
 ```text
 gradlew :app:assembleRelease
 python tools/verify_harness_build.py
-python -m unittest discover -s tools -p test_socket_endpoint.py -v
+python -m unittest discover -s tools -p "test_*.py" -v
 ```
 
 Release assembly checks unsigned packaging, not distribution. The verifier
@@ -170,6 +172,43 @@ harness libraries/components on all ABIs. CI runs these checks and needs no
 external test endpoint. src/testDebug tests cover mapping, absent fields,
 exact byte/hash accounting, protection/cancellation/cleanup failures, bounded
 storage and dynamic settings. Endpoint tests use synthetic partial-write peers.
+Host tests cover manifest bounds, isolated presets, stable IDs, deterministic
+seeded pairing, redaction, hash classification, stop/continue policy, endpoint
+failure cleanup, PATH/explicit/standard-install TShark discovery, and mocked
+Windows bind-adapter-to-TShark interface resolution. Ambiguous/no-match capture
+is a skipped evidence layer. These tests do not execute a physical network
+experiment or capture.
+
+Independent RTT tests cover complete ping summaries, reply-line parsing after
+intentional transfer-end cleanup, malformed/non-finite RTTs, absent summaries,
+zero usable replies, already-completed processes, bounded cleanup fallback,
+abort/failure reasons and redaction. Both longer presets exercise this shared
+path with mocked processes. RECORDED_PARTIAL retains observed load RTTs when
+the transfer ends early; it does not invent loss/transmission counts or turn a
+short interval into a full trial. Normal completion stays RECORDED, no usable
+replies stay UNAVAILABLE, and TCP_INFO RTT remains a separate observation.
+These deterministic checks do not establish physical retention or latency benefit.
+
+Capture tests additionally cover Windows graceful control signals and bounded
+hard fallback, metadata-derived IPv4/IPv6 direction, window-scale math, sequence
+wrap, missing fields, truncated/malformed file prefixes, incomplete tails,
+redaction and separate offline outputs preserving original records. Existing
+physical sessions can be decoded with `py -3 tools/stage1_capture.py --session
+output/stage1/<session>` without ADB or live networking. COMPLETE decoder status
+does not prove lossless capture or efficacy. See EXPERIMENTS for definitions and
+the exact existing-session command. Live shutdown/flush effectiveness still needs
+owner evidence from a later authorized capture; mocked shutdown is not that proof.
+
+After one-time VPN consent, the host batch verifies a clean checkout containing
+current origin/main, an exact installed debug APK hash, one selected ADB target,
+the requested Android Network and all manifest budgets before sending data. Each
+run checkpoints raw/private artifacts under ignored `output/stage1/` and updates
+an allowlisted `redacted-summary.json`. Ctrl+C or an `ABORT` file signals worker
+cancellation; completed and contrary records remain. Missing consent/network/
+endpoint or build provenance stops before or at the affected run. Missing TShark,
+ambiguous capture-interface resolution or ping evidence is marked skipped/
+unavailable and cannot fail open into an efficacy conclusion. See
+[Experiments](EXPERIMENTS.md) for the literal command and stable-name overrides.
 
 Execute `:app:connectedDebugAndroidTest` only on a designated emulator/test phone.
 SocketHarnessInstrumentationTest covers native prefix boundaries for all twelve

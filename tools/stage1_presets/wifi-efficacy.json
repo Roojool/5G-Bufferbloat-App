@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "preset": "wifi-efficacy",
+  "transport": "wifi",
+  "failure_policy": "stop",
+  "budgets": {
+    "max_run_bytes": 134217728,
+    "max_total_bytes": 268435456,
+    "max_run_seconds": 120,
+    "max_total_seconds": 300
+  },
+  "rtt": {"method": "adb_shell_ping", "interval_ms": 200, "idle_count": 30, "load_count": 350},
+  "variants": [
+    {"id": "baseline-long", "config": {"expectedBytes": 134217728, "durationMs": 120000, "stallTimeoutMs": 10000}},
+    {"id": "candidate-rcvbuf-65536-long", "config": {"expectedBytes": 134217728, "durationMs": 120000, "stallTimeoutMs": 10000, "receiveBuffer": 65536}}
+  ]
+}
