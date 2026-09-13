@@ -105,16 +105,82 @@ from the independent RTT records and is not treated as one-way or queue delay.
 **Hypothesis:** bounded ordered buffers and paced fair writes propagate
 backpressure to the app-facing endpoint while preserving every accepted byte.
 
-**Planned procedure:** start with controlled socket/stream tests; later repeat
-through real TUN forwarding. Exercise slow/non-reading peers, partial writes,
-EAGAIN, cancellation, half-close/reset, many bulk flows plus short flows, and
-abrupt rate reductions. Record userspace/kernel queue bounds, delay, throughput,
-per-flow progress, hashes and cleanup. Any packet AQM candidate must separately
-identify queue units, ACK/acceptance boundary, sender-retained retransmission
-copy and recovery evidence. No drop operation on accepted stream chunks.
+**Implemented deterministic procedure:** the debug-source-set
+`StreamPacingRunner` accepts injected nonblocking sources/sinks and a deterministic
+clock. Its separate configuration bounds rate, burst, quantum, read/write size,
+per-flow ring allocation, total allocation/occupancy, duration, stall timeout and
+at most sixteen ordered rate changes. Deficit round robin visits every active
+flow. The byte budget consumes only actual successful writes; partial writes
+retain their remainder and EAGAIN consumes nothing. Full buffers suppress source
+reads until space returns. Orderly source half-close drains accepted bytes before
+sink half-close. Reset/cancellation/stall records undelivered accepted bytes and
+closes each endpoint once.
 
-**Commit/device/Android/SoC/OEM/network:** not assigned. **Raw/redacted result:**
-none; not run. **Conclusion:** none. **Gate:** feasibility then Stage 3, D-07–D-09.
+**Deterministic result:** eight JVM cases cover exact byte/hash integrity; bounds
+under a non-reading peer; sustained EAGAIN backpressure and read resumption;
+partial writes plus source/sink EAGAIN; two bulk flows plus a short flow;
+cancellation/cleanup; half-close/reset; and an abrupt rate reduction. Results
+expose configured rate/burst/quantum/buffer/write limits, fixed queue/scratch
+allocation and post-cleanup retained queue bytes, applied rate changes,
+accepted/written/undelivered byte counts and hashes, per-flow/global queue peaks,
+first/completion times, no-progress duration, EAGAIN/partial-write and
+backpressure/resume counts, scheduler/pacing counts, half-close and close status,
+and typed failure code. Literal command output is recorded in the validation
+section below.
+
+**Conclusion:** source/unit feasibility is positive for the tested deterministic
+model only. No Android socket, kernel send buffer, device scheduler, radio,
+physical pacing/fairness/backpressure, TUN forwarding, latency benefit or
+production behavior was tested. The queue holds already-accepted TCP stream
+bytes; it has neither packet boundaries nor retransmission ownership and is
+**not** a valid packet-drop/ECN AQM queue under D-09. F-03 is not yet ready for a
+physical controlled experiment: first add a separate debug-only protected
+remote-socket/app-facing controlled adapter and kernel-buffer instrumentation
+without connecting it to the production route. **Gate:** Stage 1 and D-07–D-09;
+not passed.
+
+**Literal validation (2026-09-14; no physical run):**
+
+```text
+First focused run after implementation:
+8 tests completed, 2 failed
+StreamPacingHarnessTest > orderlyHalfCloseDrainsWhileResetReportsAcceptedRemainder FAILED
+StreamPacingHarnessTest > sustainedBackpressureStopsAndSafelyResumesReads FAILED
+BUILD FAILED in 38s
+
+Cause: both test fixtures retained a 64-byte burst with a 32-byte global bound;
+configuration correctly rejected burstBytes > globalBufferBytes.
+
+Corrected focused run:
+BUILD SUCCESSFUL in 31s
+22 actionable tasks: 5 executed, 17 up-to-date
+F03 XML: tests=8 failures=0 errors=0 skipped=0
+
+Full repository Gradle validation:
+BUILD SUCCESSFUL in 1m 3s
+136 actionable tasks: 25 executed, 111 up-to-date
+JVM XML: tests=52 failures=0 errors=0 skipped=0
+Lint errors=0
+Lint warnings=66
+
+Python host tests:
+Ran 68 tests in 2.806s
+OK
+
+Native/build verifier:
+selected NDK 28.2.13676358 on all debug/release ABIs
+debug harness=ON; release harness=OFF; packaging/manifest gates PASS
+release mapping F-03 hits=0
+
+Canonical Markdown local links: checked=87 broken=0
+Canonical Markdown fragment links: checked=0 broken=0
+git diff --check: PASS
+```
+
+The first failure is retained because it exercised a real configuration bound;
+only the inconsistent fixtures changed. Instrumentation compiled but did not
+execute. Successful unit/source/build checks add no physical efficacy,
+forwarding, kernel-buffer or production evidence.
 
 ### F-04 — adaptive delay/load autorate
 

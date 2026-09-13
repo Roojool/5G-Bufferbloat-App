@@ -33,8 +33,10 @@ Algorithm tests and lifecycle scaffolding are not a working shaper.
    TCP_WINDOW_CLAMP and TCP_INFO. Record protection, option/errno/readback,
    actual transport effect, latency/throughput and safe failure on physical
    devices. Do not infer remote control from an app-facing gVisor window.
-3. Establish bounded stream pacing/backpressure feasibility and identify any
-   valid packet AQM queues before adopting queue algorithms.
+3. Deterministic debug-source tests now establish the basic bounded stream
+   pacing/backpressure mechanics. Add a controlled physical TCP adapter and
+   kernel socket-buffer evidence before completing feasibility. The introduced
+   accepted-byte queues are not valid packet AQM queues under D-09.
 4. Define capability/device framework contracts: mandatory forwarding/lifecycle
    requirements; optional probes; unknown/unavailable/available outcomes; feature
    disablement and redacted reasons; evidence scoped by Android/kernel/ABI/network.

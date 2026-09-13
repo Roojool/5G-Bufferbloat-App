@@ -1,10 +1,10 @@
 # Current Project Context
 
-Snapshot: 2026-09-14. Implementation commit
-`c52d5d8cdfa9b8bc15774954a0abd857312de80c` is the exact source from which the
-owner's recorded physical `wifi-efficacy` pair was produced. This
-documentation-only review changes no app, native or tooling source and commits
-no raw/private evidence or identifiers.
+Snapshot: 2026-09-14. This F-03 feasibility implementation starts from clean
+main `b1b3f62cb71a96e88be021d97b340274739fa220`, the merge of PR #8. Work on
+`codex/f03-stream-feasibility` adds only a deterministic debug-source-set TCP
+stream pacing/backpressure model and JVM tests. It creates no socket, TUN,
+route, production engine or physical evidence.
 
 ## Reconciliation and next gate
 
@@ -14,8 +14,10 @@ never drop accepted stream bytes; preserve independent upload capability;
 keep IPv6 mandatory before broad/default/public activation. The reference
 queues are not production-ready. The harness implements separate experiment
 configuration and evidence layers, fresh socket baselines, length-safe native
-observations, bounded ownership and explicit failure. It implements no F-03,
-AQM, autorate, gVisor, TUN forwarding or production capability framework.
+observations, bounded ownership and explicit failure. The protected-socket
+harness implements no F-03, AQM, autorate, gVisor, TUN forwarding or production
+capability framework. The separate debug stream model described below now
+implements only deterministic F-03 mechanics.
 
 **Stage 1 remains UNPASSED.** One real arm64 phone on an explicitly selected
 Wi-Fi Network completed the baseline and SO_RCVBUF=65536 transfers with exact
@@ -36,9 +38,16 @@ fixed-order pair was not repeated/randomized. Cellular efficacy and general OEM
 support remain **UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**. Next: run a
 predeclared randomized repeated Wi-Fi pair only after confirming a topology with
 baseline loaded-latency inflation, then proceed to cellular. No physical run was
-repeated in this documentation task.
+performed in this task.
 Negative download evidence may narrow the product to independently proven
 upload; upload itself is not proven by this task.
+
+F-03 now has deterministic source-level feasibility for ordered byte integrity,
+fixed per-flow/global allocation and occupancy bounds, byte-budget pacing,
+deficit round-robin scheduling, partial writes/EAGAIN, read backpressure/resume,
+cancellation, half-close, reset, stalls and abrupt rate reduction. It is not yet
+wired to controlled Android TCP sockets or kernel send-buffer measurement, so it
+is not ready for a physical experiment. Stage 1 remains UNPASSED.
 
 ## Checked-in implementation truth
 
@@ -96,9 +105,18 @@ upload; upload itself is not proven by this task.
   allowlisted ABI and numeric kernel family from the already-redacted device
   context, plus the two fixed session-relative redacted artifact filenames.
   Arbitrary runtime strings and raw/private paths are never rendered.
+- `harness.stream.StreamPacingRunner` exists only in the debug source set. Its
+  separate `StreamHarnessConfig` allocates fixed ring buffers, enforces total
+  allocation/occupancy bounds, schedules flows with deficit round robin and
+  gates every downstream write with an integer byte budget. Typed counters retain
+  accepted/written/undelivered bytes, hashes, queue peaks, EAGAIN/partial writes,
+  backpressure/resume, pacing/rate changes, progress and cleanup status. The
+  synchronous runner retains no callback after return. Its queues contain
+  already-accepted TCP stream bytes and are explicitly invalid for packet-drop
+  or ECN AQM under D-09.
 - Production directional configuration still requires both positive limits.
-  Its independent capability model remains Stage 3 work. Kotlin queues,
-  calibration and validation remain disconnected scaffolding.
+  Its independent capability model remains Stage 3 work. Production shaping
+  queues, calibration and validation remain disconnected scaffolding.
 
 ## Build and evidence
 
@@ -111,7 +129,7 @@ NDK's source.properties, independently of merely installing that package.
 No Go/gVisor version is pinned or integrated; its old CMake switch still fails.
 
 The task runs required assembly/JVM/lint checks, release packaging regression,
-endpoint/orchestrator/operator unit tests, and instrumentation compilation.
+endpoint/orchestrator/operator and F-03 stream unit tests, and instrumentation compilation.
 Literal counts and executed versus cached task evidence are recorded in
 EXPERIMENTS and the task/PR report. No build, emulator or option success passes a physical gate.
 The owner phone reports and batches establish only their recorded Wi-Fi
@@ -119,7 +137,7 @@ acceptance, integrity and scoped sender-visible transport observations; none
 passes Stage 1. The reviewed wifi-efficacy session physically exercised the
 operator workflow and produced complete captures plus retained partial load-ping
 replies for its stated setup; broader host/device compatibility remains
-unverified. The PR #7 implementation commit has successful CI. Live protection
+unverified. The operator implementation commit has successful CI. Live protection
 requires `Build, unit test, and lint`, zero approving reviews and no force-push;
 this task changes no protection and does not merge its PR.
 
