@@ -28,6 +28,7 @@ else:
     import json
     import math
     from pathlib import Path
+    import re
     import secrets
     import sys
     import time
@@ -185,6 +186,35 @@ def _boolean(value: Any) -> str:
     return str(value).lower() if isinstance(value, bool) else "UNAVAILABLE"
 
 
+def _runtime_scope(value: Any) -> list[str]:
+    """Return only broad, non-identifying fields from redacted device context."""
+    context = value if isinstance(value, dict) else {}
+    target_kind = _known(context.get("target_kind"), {"physical", "emulator"})
+    release_value = context.get("android_release")
+    release = (release_value.strip() if isinstance(release_value, str) and
+               re.fullmatch(r"[0-9]{1,3}(?:\.[0-9]{1,3}){0,2}", release_value.strip())
+               else "UNAVAILABLE")
+    sdk_value = context.get("sdk")
+    sdk_text = (str(sdk_value).strip()
+                if isinstance(sdk_value, (str, int)) and not isinstance(sdk_value, bool) else "")
+    api_level = sdk_text if sdk_text.isascii() and sdk_text.isdigit() and 1 <= int(sdk_text) <= 999 else "UNAVAILABLE"
+    abi = _known(context.get("abi"), {
+        "arm64-v8a", "armeabi-v7a", "x86", "x86_64", "riscv64",
+    })
+    kernel_value = context.get("kernel")
+    kernel_match = (re.match(r"^([0-9]{1,3})\.([0-9]{1,3})(?:[.\-+_]|$)", kernel_value.strip())
+                    if isinstance(kernel_value, str) else None)
+    kernel_family = (f"{int(kernel_match.group(1))}.{int(kernel_match.group(2))}"
+                     if kernel_match else "UNAVAILABLE")
+    return [
+        f"Target kind: {target_kind}",
+        f"Android release: {release}",
+        f"API level: {api_level}",
+        f"ABI: {abi}",
+        f"Kernel family: {kernel_family}",
+    ]
+
+
 def _rtt_line(value: Any) -> str:
     item = value if isinstance(value, dict) else {}
     status = _known(item.get("status"), {
@@ -236,6 +266,7 @@ def render_report(summary: dict[str, Any]) -> str:
         "COMPLETE", "STOPPED_BY_POLICY", "OWNER_ABORTED", "RUNNING",
     })
     source = summary.get("source_build") if isinstance(summary.get("source_build"), dict) else {}
+    device_context = summary.get("device_context")
     lines = [
         "# Stage 1 operator report",
         "",
@@ -246,6 +277,15 @@ def render_report(summary: dict[str, Any]) -> str:
         "",
         "This report records bounded experiment observations only. It makes no Stage pass/fail or efficacy conclusion.",
         "TCP_INFO RTT is separate from independent RTT evidence.",
+        "",
+        "## Runtime scope",
+        "",
+        *_runtime_scope(device_context),
+        "",
+        "## Redacted artifacts",
+        "",
+        "- redacted-summary.json",
+        "- operator-report.md",
         "",
         "## Run observations",
         "",

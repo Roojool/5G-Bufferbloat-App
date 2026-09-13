@@ -166,6 +166,70 @@ class OperatorTests(unittest.TestCase):
         self.assertIn("returned_lengths=232", report)
         self.assertIn("kind=SO_RCVBUF", report)
 
+    def test_report_includes_only_allowlisted_runtime_scope(self):
+        summary = {
+            "schema": 1, "preset": "wifi-screen", "transport": "wifi",
+            "batch_status": "COMPLETE", "source_build": {"git_sha": "a" * 40},
+            "runs": [{"run_status": "SCREEN_COMPLETE"}],
+            "device_context": {
+                "target_kind": "physical", "android_release": "14", "sdk": "35",
+                "abi": "arm64-v8a", "kernel": "5.15.149-android13-private-decoy",
+                "model": "PRIVATE_MODEL_DECOY", "serial": "PRIVATE_SERIAL_DECOY",
+                "ssid": "PRIVATE_SSID_DECOY", "carrier": "PRIVATE_CARRIER_DECOY",
+            },
+        }
+        report = operator_tool.render_report(summary)
+        for expected in ("Target kind: physical", "Android release: 14", "API level: 35",
+                         "ABI: arm64-v8a", "Kernel family: 5.15"):
+            self.assertIn(expected, report)
+        for decoy in ("PRIVATE_MODEL_DECOY", "PRIVATE_SERIAL_DECOY", "PRIVATE_SSID_DECOY",
+                      "PRIVATE_CARRIER_DECOY", "android13-private-decoy"):
+            self.assertNotIn(decoy, report)
+
+    def test_run_uses_only_each_current_invocation(self):
+        first = self.target(endpoint_address="192.0.2.10", bind_address="192.0.2.20", port=41001)
+        second = self.target(endpoint_address="198.51.100.10", bind_address="198.51.100.20", port=42002)
+        seen = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def run_batch(arguments):
+                seen.append(arguments)
+                session = root / str(len(seen))
+                session.mkdir()
+                return session, {
+                    "schema": 1, "preset": "wifi-screen", "transport": "wifi",
+                    "batch_status": "COMPLETE", "source_build": {"git_sha": "a" * 40},
+                    "runs": [{"run_status": "SCREEN_COMPLETE"}],
+                }
+
+            with patch.object(operator_tool.batch, "run_batch", side_effect=run_batch), \
+                 patch.object(operator_tool, "preflight_command") as preflight, \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(operator_tool.EXIT_SUCCESS, operator_tool.run_command(first))
+                self.assertEqual(operator_tool.EXIT_SUCCESS, operator_tool.run_command(second))
+            preflight.assert_not_called()
+        self.assertEqual([(item.endpoint_address, item.bind_address, item.port) for item in seen], [
+            ("192.0.2.10", "192.0.2.20", 41001),
+            ("198.51.100.10", "198.51.100.20", 42002),
+        ])
+        self.assertTrue(all(item.manifest is None for item in seen))
+
+    def test_report_artifact_references_cannot_expose_raw_paths(self):
+        summary = {
+            "schema": 1, "preset": "wifi-screen", "transport": "wifi",
+            "batch_status": "COMPLETE", "source_build": {"git_sha": "a" * 40},
+            "runs": [{"run_status": "SCREEN_COMPLETE"}],
+            "capture_path": r"C:\private\raw\capture.pcapng",
+            "raw_path": r"output\stage1\session\raw\private.json",
+            "report_path": r"C:\private\operator-report.md",
+        }
+        report = operator_tool.render_report(summary)
+        self.assertIn("- redacted-summary.json", report)
+        self.assertIn("- operator-report.md", report)
+        for private in ("capture.pcapng", "private.json", "C:/private", "raw/"):
+            self.assertNotIn(private, report.replace("\\", "/"))
+
     def test_experiment_exit_codes_do_not_imply_stage_conclusion(self):
         complete = {"batch_status": "COMPLETE", "runs": [{"run_status": "SCREEN_COMPLETE"}]}
         inconclusive = {"batch_status": "COMPLETE", "runs": [{"run_status": "FAILED_OR_INCONCLUSIVE"}]}

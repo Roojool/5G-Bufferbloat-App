@@ -613,6 +613,35 @@ transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memo
 thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
 Wi-Fi results above are not a device-family, carrier or efficacy success.
 
+### Literal operator-report follow-up validation (2026-09-14; no physical run)
+
+This focused PR #7 follow-up changes only `tools/operator.py`, its host tests and
+canonical documentation. It adds allowlisted broad runtime scope, fixed
+session-relative redacted artifact filenames, and direct proof that each run
+delegates only its current invocation arguments. It reads no retained physical
+session and invokes no ADB, endpoint or capture path.
+
+```text
+py -3 -m unittest discover -s tools -p 'test_operator.py' -v
+Ran 16 tests in 0.541s
+OK
+
+py -3 -m unittest discover -s tools -p 'test_*.py'
+Ran 68 tests in 3.862s
+OK
+
+py -3 tools/verify_harness_build.py
+debug/release selected NDK 28.2.13676358 on all three ABIs
+debug harness=ON; release harness=OFF; both packaging/manifest gates PASS
+```
+
+An initial `py -3 -m unittest tools.test_operator -v` invocation failed during
+module import because `tools` is not configured as a Python package. No test or
+experiment ran in that attempt. The repository-supported discovery invocation
+above executed all focused tests successfully. `py_compile` and `git diff
+--check` also passed. The final commit/CI result accompanies the task report.
+Stage 1 remains UNPASSED.
+
 ### Literal stateless-operator validation (2026-09-14; no physical run)
 
 Implemented on `codex/stage1-operator` from current main

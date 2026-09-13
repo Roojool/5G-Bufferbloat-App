@@ -86,6 +86,10 @@ upload; upload itself is not proven by this task.
   retains existing bounds, abort/failure records and private/redacted storage.
   Cellular use rejects a private/non-global endpoint. Reports use a strict
   allowlist, make no Stage/efficacy conclusion, and end awaiting reviewer judgment.
+  They include only broad target kind, numeric Android release/API level,
+  allowlisted ABI and numeric kernel family from the already-redacted device
+  context, plus the two fixed session-relative redacted artifact filenames.
+  Arbitrary runtime strings and raw/private paths are never rendered.
 - Production directional configuration still requires both positive limits.
   Its independent capability model remains Stage 3 work. Kotlin queues,
   calibration and validation remain disconnected scaffolding.
