@@ -1,11 +1,12 @@
 # Engineering Experiments
 
 This is the home for literal feasibility, capability and performance evidence.
-Proposals are not results. As of 2026-09-13, the two first-screen Wi-Fi runs and
-one ten-run physical wifi-screen batch are recorded for the debug-only F-01/F-02
-no-route harness. Offline analysis adds sender-visible window and recovery
-observations with explicit capture gaps. It establishes no latency benefit,
-cellular efficacy or production readiness; Stage 1 remains UNPASSED.
+Proposals are not results. As of 2026-09-14, two first-screen Wi-Fi runs, one
+ten-run physical wifi-screen batch and one two-run physical wifi-efficacy pair
+are recorded for the debug-only F-01/F-02 no-route harness. Sender captures now
+provide strong positive evidence of receive-window control for one Android
+12/API 31 device on Wi-Fi. They establish no bufferbloat benefit, cellular
+efficacy, general compatibility or production readiness; Stage 1 remains UNPASSED.
 Use [Testing](TESTING.md) for evidence categories and
 [Compatibility](COMPATIBILITY.md) for narrowly scoped support claims.
 
@@ -71,12 +72,14 @@ loaded latency, throughput, CPU/memory, stalls, zero-window recovery and hashes.
 Repeat across Wi-Fi/cellular and OEM/kernel combinations. Keep a failed probe's
 fallback explicit. Window/RTT arithmetic alone is not a measurement.
 
-**Current evidence:** runs F-01-WIFI-BASELINE-01 and F-01-WIFI-RCVBUF-01 below
-are verified only for their stated one-phone Wi-Fi scope: baseline
-transfer/integrity completed, and SO_RCVBUF=65536 was accepted and read back as
-131072 without loss of transfer integrity. Sender-observed window control,
-throttling, zero-window/recovery, loaded-latency benefit and cellular efficacy
-remain unverified. **Gate:** Stage 1, D-04 through D-06; not passed.
+**Current evidence:** the first screen, ten-run batch and wifi-efficacy records
+below are verified only for their stated one-phone Wi-Fi scopes. The reviewed
+wifi-efficacy pair supplies strong positive evidence that SO_RCVBUF=65536 on the
+protected socket changed the sender-visible advertised receive window while
+preserving 128 MiB integrity. Its one candidate run produced only a modest
+throughput reduction. Repeatability, useful throttling, loaded-latency benefit,
+cellular efficacy and general compatibility remain unverified. **Gate:** Stage 1,
+D-04 through D-06; not passed.
 
 ### F-02 — TCP_INFO capability and measurement meaning
 
@@ -90,10 +93,12 @@ when it is stale or inapplicable. In particular, do not assume a local
 TCP sender RTT field measures downlink queueing. Reject absent/truncated data
 safely; a successful call is not an accurate loaded-latency measurement.
 
-**Current evidence:** the two Wi-Fi runs below returned TCP_INFO successfully
-with errno 0 and length 232; all fields exposed by this harness were available
-on this phone/run. Their values and meanings were not independently validated
-against sender or latency evidence. **Gate:** Stage 1, D-06 and D-13; not passed.
+**Current evidence:** the first two Wi-Fi runs below returned TCP_INFO
+successfully with errno 0 and length 232. The later wifi-efficacy baseline and
+candidate made 60/63 successful calls respectively with returned length 192 and
+the report's twelve compiled fields available. TCP_INFO RTT remains separate
+from the independent RTT records and is not treated as one-way or queue delay.
+**Gate:** Stage 1, D-06 and D-13; not passed.
 
 ### F-03 — bounded TCP upload pacing and fairness
 
@@ -269,13 +274,11 @@ with CONNECT_FAILED and errno 113. Subsequent LAN success identifies
 connectivity/topology as the supported explanation; the failure is not evidence
 for or against F-01 control efficacy. No endpoint details are retained.
 
-The next physical experiment is a fresh-socket, sufficiently long Wi-Fi pair of
-baseline and SO_RCVBUF=65536 with a backlogged sender, private sender-side capture
-from before SYN, and independent idle/load RTT timing. It should test whether the
-readback difference produces a repeatable scaled advertised-window/right-edge
-change and sender-throughput response while preserving count/hash. Then exercise
-read withholding/reopening for zero-window and recovery evidence before moving to
-the documented randomized cellular pairs.
+The later wifi-efficacy record below completes the proposed long fresh-socket
+baseline/SO_RCVBUF=65536 pair with sender capture and independent RTT timing.
+Its next follow-up is repetition with randomized order under demonstrated
+baseline loaded-latency inflation, while retaining count/hash and capture checks,
+before moving to the documented randomized cellular pairs.
 
 ### Automated owner procedure: Wi-Fi first, then cellular
 
@@ -501,6 +504,52 @@ UNVERIFIED; Stage 1 is UNPASSED. Next, review these retained traces and independ
 RTT adequacy before planning a longer paired Wi-Fi benefit experiment. No repeat
 experiment was authorized or run in this follow-up.
 
+### F-01-WIFI-EFFICACY-01 — reviewed physical pair (2026-09-14)
+
+**Status: verified for the stated sender-visible control and integrity scope;
+physical benefit inconclusive.** The owner ran the reviewed `wifi-efficacy`
+preset using implementation commit
+`c52d5d8cdfa9b8bc15774954a0abd857312de80c`, the debug/no-route protected-socket
+harness, an explicitly selected Wi-Fi Network and an owner-controlled endpoint.
+The broad redacted runtime scope is physical Android 12 / API 31 / arm64-v8a /
+kernel family 4.14. No model, serial, SSID, address, port, MAC, interface,
+Network handle, capture path, carrier or location is retained.
+
+| Observation | Baseline | SO_RCVBUF=65536 candidate |
+|---|---:|---:|
+| Outcome | COMPLETE | COMPLETE |
+| Bytes | 134217728 | 134217728 |
+| Integrity | VERIFIED_FOR_THIS_TRANSFER | VERIFIED_FOR_THIS_TRANSFER |
+| Elapsed ms | 15094 | 15868 |
+| SO_RCVBUF setsockopt errno | not requested | 0 |
+| SO_RCVBUF readback | 2097152 baseline observation | 131072 |
+| Capture analysis | COMPLETE | COMPLETE |
+| Scaled advertised rwnd min/median/max bytes | 966656 / 1032192 / 1572864 | 8 / 83328 / 96000 |
+| Sender bytes-in-flight peak | 80320 | 81768 |
+| Zero-window frames | 0 | 0 |
+| Zero-window-probe frames | 0 | 0 |
+| Retransmission observations | 7 | 9 |
+| Idle RTT | RECORDED; requested 30; observed 30; min/avg/max 3.946 / 17.067 / 38.406 ms; NORMAL_COMPLETION | RECORDED; requested 30; observed 30; min/avg/max 3.433 / 15.499 / 115.4 ms; NORMAL_COMPLETION |
+| Loaded RTT | RECORDED_PARTIAL; requested 350; observed 80; min/avg/max 3.02 / 7.56675 / 20.2 ms; TRANSFER_ENDED | RECORDED_PARTIAL; requested 350; observed 84; min/avg/max 2.58 / 6.957976190476191 / 16.0 ms; TRANSFER_ENDED |
+
+Arithmetic derived from bytes and elapsed time, not a separate measurement:
+baseline throughput was approximately **71.136996 Mbit/s**, candidate throughput
+approximately **67.667118 Mbit/s**, and the candidate was approximately
+**4.877741% lower**. These are one fixed-order baseline/candidate observations.
+
+**Reviewer conclusion:** this is strong positive evidence for sender-visible
+protected-socket receive-window control on this one-device Wi-Fi scope, and
+long-transfer integrity was preserved. The single candidate run had only a
+modest throughput reduction. Physical bufferbloat benefit remains
+**INCONCLUSIVE / UNVERIFIED**: this fixed-order pair did not demonstrate baseline
+loaded-latency inflation, loaded RTT collection ended with each transfer, and
+there is no repeated/randomized efficacy evidence. It provides no cellular or
+general compatibility claim and no integrated-TUN or production evidence.
+Stage 1 remains **UNPASSED**. The next useful experiment is a predeclared,
+randomized repeated Wi-Fi baseline/candidate series under a topology that first
+demonstrates baseline loaded-latency inflation and keeps independent RTT
+collection comparable through the load and recovery interval.
+
 ### Manual fallback procedure
 
 1. Use an owned phone and authorized directly reachable test machine. Choose a
@@ -606,12 +655,50 @@ cannot pass layers 4–6. Clamp failure may leave buffering/read experiments use
 download failure may narrow future scope to independently proven upload. Never
 compensate with UDP dropping, TLS interception or a relay.
 
-Immediate minimum: complete the remaining one-phone Wi-Fi mechanism screens,
-then cellular. Preferred early: Qualcomm and
+Immediate next: repeat the Wi-Fi efficacy pair with randomized order only after
+confirming baseline loaded-latency inflation, then proceed to cellular. Preferred early: Qualcomm and
 MediaTek across two OEM/kernel contexts. Later: broader Android/carrier/family,
 transition/captive-portal/screen-off/resource matrix. gVisor throughput/CPU/memory/
-thermal screening belongs with a pinned minimal Stage 2 adapter. The two narrow
-Wi-Fi results above are not a device-family, carrier or efficacy success.
+thermal screening belongs with a pinned minimal Stage 2 adapter. The recorded
+one-device Wi-Fi results are not a device-family, carrier or efficacy success.
+
+### Literal wifi-efficacy evidence-documentation validation (2026-09-14)
+
+This documentation-only branch starts at current main
+`c52d5d8cdfa9b8bc15774954a0abd857312de80c`. The review read the retained
+redacted operator report only; it did not run ADB, an endpoint, capture, or any
+physical experiment and did not copy raw/private artifacts.
+
+```text
+Initial Gradle attempt with shell-default Java 25.0.2:
+FAILURE: Build failed with an exception.
+What went wrong: 25.0.2
+BUILD FAILED in 7s
+
+JAVA_HOME=C:\Program Files\Android\Android Studio\jbr
+OpenJDK 21.0.10
+gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 24s
+136 actionable tasks: 16 executed, 120 up-to-date
+JVM XML: tests=44 failures=0 errors=0 skipped=0
+Lint errors=0
+Lint warnings=66
+
+Markdown local links: checked=65 broken=0
+Markdown fragment links: 0
+git diff --check: PASS
+Non-documentation changed files: 0
+Tracked output files: 0
+
+py -3 tools/verify_harness_build.py
+debug/release selected NDK 28.2.13676358 on all three ABIs
+debug harness=ON; release harness=OFF; both packaging/manifest gates PASS
+```
+
+The successful rerun used the documented JDK 21 after the unsupported shell
+default caused the retained pre-task failure. Instrumentation was compiled, not
+executed; JVM tests and most build work were UP-TO-DATE. These source checks do
+not add physical evidence. The final commit, PR and CI accompany the task report.
 
 ### Literal operator-report follow-up validation (2026-09-14; no physical run)
 

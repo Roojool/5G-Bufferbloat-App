@@ -1,12 +1,10 @@
 # Current Project Context
 
-Snapshot: 2026-09-14. Current main is
-`ce4d9b8553eb6d658802a7846dc60234d0ab6c39`, the merge of PR #6, with the
-protected-socket harness, host batch/capture tooling and recorded Wi-Fi evidence
-checked in. Work on `codex/stage1-operator` adds a stateless, low-friction host
-operator around those reviewed tools. It changes no Android/native/production
-networking behavior or physical evidence and runs no physical experiment. The
-exact implementation commit, PR and validation accompany the task report.
+Snapshot: 2026-09-14. Implementation commit
+`c52d5d8cdfa9b8bc15774954a0abd857312de80c` is the exact source from which the
+owner's recorded physical `wifi-efficacy` pair was produced. This
+documentation-only review changes no app, native or tooling source and commits
+no raw/private evidence or identifiers.
 
 ## Reconciliation and next gate
 
@@ -27,10 +25,18 @@ A subsequent ten-run physical wifi-screen batch on `d2a0596538a284ca1740c5ab787d
 has exact count/hash integrity on all runs. Offline sender analysis establishes
 window observations and scoped zero-window/reopen/recovery. Eight captures parse
 to EOF, two are truncated; only three include the full payload ACK/end coverage.
-Useful repeatable throttling, loaded-latency benefit, cellular efficacy and general
-OEM support remain **UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**. Next: review the
-retained transport/timing evidence before longer paired Wi-Fi and cellular runs
-following [Experiments](EXPERIMENTS.md). No physical run was repeated in this task.
+The later 128 MiB baseline/SO_RCVBUF=65536 `wifi-efficacy` pair on physical
+Android 12/API 31/arm64-v8a/kernel family 4.14 completed with integrity and
+complete captures. Its scaled advertised receive-window distributions provide
+strong positive sender-visible control evidence for this one-device Wi-Fi scope;
+the candidate's arithmetic-derived throughput was about 4.88% lower. Physical
+bufferbloat benefit remains inconclusive/unverified because baseline loaded RTT
+did not inflate, loaded RTT records ended partially with the transfers, and the
+fixed-order pair was not repeated/randomized. Cellular efficacy and general OEM
+support remain **UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**. Next: run a
+predeclared randomized repeated Wi-Fi pair only after confirming a topology with
+baseline loaded-latency inflation, then proceed to cellular. No physical run was
+repeated in this documentation task.
 Negative download evidence may narrow the product to independently proven
 upload; upload itself is not proven by this task.
 
@@ -108,14 +114,14 @@ The task runs required assembly/JVM/lint checks, release packaging regression,
 endpoint/orchestrator/operator unit tests, and instrumentation compilation.
 Literal counts and executed versus cached task evidence are recorded in
 EXPERIMENTS and the task/PR report. No build, emulator or option success passes a physical gate.
-The first owner phone report and subsequent batch establish only their recorded
-Wi-Fi acceptance, integrity and scoped transport observations; neither passes
-Stage 1. Python operator tests use mocks and synthetic summaries without a device,
-network, live capture or existing physical session. Graceful live Windows capture
-shutdown, operator workflow and partial load-ping retention still need later
-physical validation. Current main and merged PR #6 have successful CI. Live
-protection requires `Build, unit test, and lint`, zero approving reviews and no
-force-push; this task changes no protection and does not merge its PR.
+The owner phone reports and batches establish only their recorded Wi-Fi
+acceptance, integrity and scoped sender-visible transport observations; none
+passes Stage 1. The reviewed wifi-efficacy session physically exercised the
+operator workflow and produced complete captures plus retained partial load-ping
+replies for its stated setup; broader host/device compatibility remains
+unverified. The PR #7 implementation commit has successful CI. Live protection
+requires `Build, unit test, and lint`, zero approving reviews and no force-push;
+this task changes no protection and does not merge its PR.
 
 ## Documentation hierarchy
 
