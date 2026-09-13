@@ -1,10 +1,10 @@
 # Current Project Context
 
-Snapshot: 2026-09-14. Current main is
-`c52d5d8cdfa9b8bc15774954a0abd857312de80c`, the merge of PR #7. This
-documentation-only review records the owner's physical `wifi-efficacy` pair run
-from that exact implementation. It changes no app, native or tooling source and
-commits no raw/private evidence or identifiers.
+Snapshot: 2026-09-14. Implementation commit
+`c52d5d8cdfa9b8bc15774954a0abd857312de80c` is the exact source from which the
+owner's recorded physical `wifi-efficacy` pair was produced. This
+documentation-only review changes no app, native or tooling source and commits
+no raw/private evidence or identifiers.
 
 ## Reconciliation and next gate
 
@@ -119,9 +119,9 @@ acceptance, integrity and scoped sender-visible transport observations; none
 passes Stage 1. The reviewed wifi-efficacy session physically exercised the
 operator workflow and produced complete captures plus retained partial load-ping
 replies for its stated setup; broader host/device compatibility remains
-unverified. Current main is the merge of PR #7 and has successful CI. Live
-protection requires `Build, unit test, and lint`, zero approving reviews and no
-force-push; this task changes no protection and does not merge its PR.
+unverified. The PR #7 implementation commit has successful CI. Live protection
+requires `Build, unit test, and lint`, zero approving reviews and no force-push;
+this task changes no protection and does not merge its PR.
 
 ## Documentation hierarchy
 
