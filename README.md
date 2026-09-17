@@ -52,7 +52,7 @@ See [Source Build](docs/SOURCE_BUILD.md) for prerequisites and commands. The sho
 Use JDK 21, Android SDK Platform 35, and CMake 3.22.1. NDK r28c
 (`28.2.13676358`) is pinned by Gradle and verified from actual CMake
 selection on all three ABIs. See [Source Build](docs/SOURCE_BUILD.md).
-A separate debug-only F-01/F-02 socket harness is available for owner experiments;
+A separate debug-only F-01/F-02/F-03 socket harness is available for owner experiments;
 it creates no VPN route and establishes no physical efficacy. The release APK
 excludes its components and native library. [Experiment procedure](docs/EXPERIMENTS.md)
 

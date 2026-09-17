@@ -21,32 +21,46 @@ class HarnessService : VpnService() {
         private set
     @Volatile var result: ExperimentResult? = null
         private set
+    @Volatile var uploadResult: UploadResult? = null
+        private set
     @Volatile var cleanupJoined = true
         private set
 
     override fun onBind(intent: Intent): IBinder? =
         if (intent.action == SERVICE_INTERFACE) super.onBind(intent) else LocalBinder()
 
-    fun start(config: ExperimentConfig, network: Network?): Boolean = synchronized(gate) {
+    fun start(config: ExperimentConfig, network: Network?, upload: UploadConfig? = null,
+        scope: CapabilityScope? = null): Boolean = synchronized(gate) {
         if (stopped || running) return false
         val request = config.copy(changes = config.changes.toList())
         request.validate()
+        val uploadRequest = upload?.copy(endpoint = request, flowBytes = upload.flowBytes.toList(),
+            pacing = upload.pacing.copy(rateChanges = upload.pacing.rateChanges.toList()))
+        uploadRequest?.validate()
+        require(uploadRequest == null || (network != null && scope != null))
         cancellation = AtomicBoolean(false)
         val token = cancellation
         result = null
+        uploadResult = null
         running = true
         cleanupJoined = false
         executor.execute {
             try {
-                result = ExperimentRunner(SocketNative).run(request, token, protect = { fd ->
-                    synchronized(gate) { !stopped && !token.get() && protect(fd) }
-                }, bind = { fd ->
+                val protector: (Int) -> Boolean = { fd ->
+                    // Do not hold the lifecycle lock across a platform/Binder call:
+                    // teardown must be able to cancel and report an unjoined worker.
+                    val allowed = synchronized(gate) { !stopped && !token.get() }
+                    allowed && protect(fd)
+                }
+                val binder: (Int) -> Unit = { fd ->
                     // fromFd duplicates the descriptor; bindSocket affects the same socket.
                     network?.let { selected ->
                         ParcelFileDescriptor.fromFd(fd).use { selected.bindSocket(it.fileDescriptor) }
                     }
-                })
-            } finally { running = false; cleanupJoined = true }
+                }
+                if (uploadRequest == null) result = ExperimentRunner(SocketNative).run(request, token, protector, binder)
+                else uploadResult = UploadRunner(SocketNative).run(uploadRequest, requireNotNull(scope), token, protector, binder)
+            } finally { cleanupJoined = true; running = false }
         }
         true
     }

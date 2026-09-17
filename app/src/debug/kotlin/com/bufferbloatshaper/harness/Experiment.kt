@@ -41,7 +41,7 @@ data class OptionRecord(val atMs: Long, val phase: String, val kind: String, val
     companion object {
         fun decode(at: Long, phase: String, kind: Int, requested: Int?, raw: LongArray): OptionRecord {
             require(raw.size == 5)
-            return OptionRecord(at, phase, if (kind == 0) "SO_RCVBUF" else "TCP_WINDOW_CLAMP",
+            return OptionRecord(at, phase, when (kind) { 0 -> "SO_RCVBUF"; 1 -> "TCP_WINDOW_CLAMP"; 2 -> "SO_SNDBUF"; else -> error("option kind") },
                 requested, raw[0] == 1L, raw[1].takeIf { it >= 0 }?.toInt(), raw[2].takeIf { it >= 0 }?.toInt(),
                 raw[3].takeIf { raw[0] == 1L && raw[2] == 0L && raw[4] == 4L && it >= 0 }, raw[4])
         }

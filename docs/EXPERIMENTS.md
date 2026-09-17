@@ -133,11 +133,10 @@ model only. No Android socket, kernel send buffer, device scheduler, radio,
 physical pacing/fairness/backpressure, TUN forwarding, latency benefit or
 production behavior was tested. The queue holds already-accepted TCP stream
 bytes; it has neither packet boundaries nor retransmission ownership and is
-**not** a valid packet-drop/ECN AQM queue under D-09. F-03 is not yet ready for a
-physical controlled experiment: first add a separate debug-only protected
-remote-socket/app-facing controlled adapter and kernel-buffer instrumentation
-without connecting it to the production route. **Gate:** Stage 1 and D-07–D-09;
-not passed.
+**not** a valid packet-drop/ECN AQM queue under D-09. The later source-readiness
+change below adds a separate debug-only physical adapter and kernel observations.
+It does not retroactively add physical evidence to these deterministic results.
+**Gate:** Stage 1 and D-07–D-09; not passed.
 
 **Literal validation (2026-09-14; no physical run):**
 
@@ -182,6 +181,203 @@ only the inconsistent fixtures changed. Instrumentation compiled but did not
 execute. Successful unit/source/build checks add no physical efficacy,
 forwarding, kernel-buffer or production evidence.
 
+### Stage 1 physical campaign source readiness (2026-09-17; proposed/unrun)
+
+Starting commit: `310a24856845cb7edfb7cca18bb2af0600d177bb`; branch:
+`codex/stage1-physical-ready`. Source/build evidence only. **No ADB, attached
+device inspection, installation, emulator, physical run or network experiment
+was performed. Stage 1 is IN PROGRESS / UNPASSED.**
+
+F-03 now reuses `StreamPacingRunner` with a bounded synthetic source per flow
+(byte i = i modulo 251) and protected, explicitly Network-bound Android/Linux
+TCP sinks. It uses the existing bound service, JNI library, batch Activity,
+operator, endpoint and evidence paths. It implements neither production TCP
+leg, a packet AQM queue, gVisor, TUN forwarding nor ordinary-app interception.
+The source generator is a controlled load source, not an app-facing TCP stack.
+
+#### Measurement and lifecycle contract
+
+| Observation | Exact meaning / unavailable behavior |
+|---|---|
+| Configured userspace bounds | Per-flow/global ring bounds, burst, quantum, read/write limits; fixed allocated rings and read scratch reported separately from occupancy. JNI write scratch bound 16384 bytes and receipt capacity 66 bytes per socket are separate; this is not whole-process heap accounting. |
+| Live occupancy | Per-flow queued bytes sampled at 250 ms intervals, plus exact peaks and final counters; at most 480 samples, with omitted count. Samples can miss short peaks; exact runner peaks are separate. |
+| SO_SNDBUF | Explicit request, compiled availability, set/get errno, length and readback before/after connect. Readback above configured ceiling, failed request or unavailable readback stops before stream acceptance. Linux accounting/readback is not exact kernel allocation or payload occupancy. |
+| Kernel queue observations | SIOCOUTQ and SIOCOUTQNSD compiled availability, literal errno and bytes if supported. OUTQ covers outstanding local send sequence bytes; NOT_SENT covers not-yet-sent bytes. Neither measures radio queues, wire departure or total kernel memory. Missing values remain null. |
+| TCP_INFO | Existing length-safe decoder and field meanings apply. Malformed/throwing optional observations disable that observation; local decode failure uses errno sentinel -1, not a fabricated syscall errno. |
+| Pacing / throughput | Configured rate/burst, actual applied rate-change times, first/last progress, actual sample intervals, interval/whole-run write-acceptance bytes/s and per-flow endpoint bytes/elapsed time. These measure userspace/kernel API progress, not physical packet timing. Wire rate remains unavailable. |
+| Fairness | Per-flow accepted/written counts over time, first write/completion, EAGAIN/partial writes, queue peaks, backpressure/resumption and no-progress gaps. No automatic fairness verdict. |
+| Integrity / failure | Exact SHA-256 of accepted and written bytes plus receiver hashes/counts. Accepted-but-unwritten bytes are explicit; kernel-accepted bytes without verified receipt are separately unconfirmed. No silent stream-byte loss. |
+| Capabilities | Fresh per-socket Android API/kernel family/ABI/transport/IP-family scope, UNKNOWN/AVAILABLE/UNAVAILABLE, mandatory flag, fixed reason and probe timestamp/errno. Stale or changed scope disables the observation. Forwarding and production lifecycle remain UNKNOWN; no activation caller exists. |
+
+On source EOF, the runner drains all accepted bytes before SHUT_WR. Adapter
+COMPLETE additionally requires each receiver's exact 64-hex-character hash plus
+newline and EOF, then successful local close. Host SCREEN_COMPLETE additionally
+requires expected count/hash agreement and cleanup evidence. No layer proves
+physical pacing efficacy. The endpoint sends a receipt only after exact expected
+count/hash and source FIN. Responses longer than 65 bytes, malformed/mismatched
+hashes, early EOF, reset and missing receipts fail explicitly.
+
+On cancellation, deadline, reset, stall or callback failure, the worker requests
+SO_LINGER(1,0), records its status, and closes every owned descriptor once. A
+successful abort request is not proof a peer observed RST. Failed streams are
+not resumable; pending bytes are accounted as explicit connection failure,
+never selectively dropped as AQM. Original deadline covers setup, paced writes
+and receipts; no-progress waits are bounded. No callback survives worker return.
+Pathological platform/Binder hangs remain a physical lifecycle uncertainty under
+the existing visible two-second join policy; no concurrent-close workaround.
+
+The Linux API meanings were rechecked against [tcp(7)](https://man7.org/linux/man-pages/man7/tcp.7.html)
+and [socket(7)](https://man7.org/linux/man-pages/man7/socket.7.html); they do not
+establish any Android/OEM behavior. The initial main CI SDK-setup failure was
+`Warning: Failed to find package 'tools'` before compilation. The workflow now
+sets `packages: platform-tools`, using the action's documented
+[packages input](https://github.com/android-actions/setup-android/blob/v3/action.yml),
+without dropping any build/test/lint check.
+
+#### One later operator's frozen-source procedure
+
+These are **future authorized physical instructions**, not commands executed by
+this source task. Freeze a reviewed full source SHA and clean checkout. Supply
+`--source-commit <full-sha>` on every preflight/run: exact HEAD is required even
+if origin/main has advanced; no source update is automatic. Without this flag,
+the existing current-main ancestry policy remains. APK hash/provenance checking
+is mandatory in both modes. Build/install only in that later authorized session.
+
+1. Rediscover attached authorized physical targets afresh at every session;
+   select the current serial only if ambiguous. Confirm manual VPN consent and
+   no competing/lockdown VPN. Never reuse a stored serial/model/Network/IP/SSID
+   or interface assumption. Confirm the owned reachable numeric endpoint, bind
+   address and port for this invocation; cellular requires a globally routable
+   endpoint, with owner-controlled host/mapping and firewall. Scope IPv4/IPv6
+   separately. TShark interface discovery runs afresh from the current bind.
+2. Use existing preflight, run and report, substituting only current values:
+
+   ```text
+   py -3 tools/operator.py preflight --preset wifi-upload --transport wifi --source-commit <full-sha> --endpoint-address <current-ip> --bind-address <current-bind> --port <current-port> --confirm-endpoint-bind --build --install
+   py -3 tools/operator.py run --preset wifi-upload --transport wifi --source-commit <full-sha> --endpoint-address <current-ip> --bind-address <current-bind> --port <current-port> --confirm-endpoint-bind
+   py -3 tools/operator.py report --session output/stage1/<new-session>
+   ```
+
+   Android resolves the requested Network again for every run; all flows in
+   that run bind to that fresh selection. Each flow opens/protects a fresh socket.
+   The existing endpoint gains a bounded synthetic upload receiver; it never
+   accepts arbitrary application input for relaying or persists payloads.
+3. Run `wifi-screen` for F-01/F-02 options/cadence/recovery. Run `wifi-efficacy`
+   as a topology screen, then `wifi-paired` only after observing baseline
+   loaded-latency inflation. The latter has five seeded randomized 64 MiB pairs,
+   640 MiB planned payload, up to 120 seconds/run. Preserve all short intervals
+   and capture gaps. Pair order and provisional SO_RCVBUF=65536 are declared
+   inputs, not optimized product settings. A short fast LAN transfer may be
+   unsuitable; never convert it into a claimed benefit test.
+4. Run `wifi-upload`, then only with fresh cellular discovery and endpoint
+   confirmation run `cellular-upload` and existing `cellular-paired`. The two
+   upload presets have identical seven procedures: 16 MiB at 512 KiB/s; concurrent
+   8 MiB/64 KiB/8 MiB flows at aggregate 512 KiB/s; 16 MiB with 1 MiB/s falling
+   to 256 KiB/s after two seconds; 4 MiB with a two-second receiver pause followed
+   by 4096-byte reads every 5 ms; a ten-second pause versus two-second stall
+   bound; reset after 32768 received bytes; and a one-second deadline at 16 KiB/s.
+   Total planned payload is 79,757,312 bytes per upload preset (receipts at most
+   585 bytes; TCP/IP/retransmission overhead is additional). Receiver kernel
+   buffering may delay or prevent observed backpressure; report the actual result.
+   Negative cases intentionally remain FAILED_OR_INCONCLUSIVE/exit 3 and continue
+   by reviewed policy. A reviewer must confirm the expected failure and cleanup;
+   a negative preset name is never a pass assertion.
+5. For cancellation, start a separate `wifi-upload` session, create its printed
+   session `ABORT` file during the first paced run, then report the retained
+   record. The host signals cancellation and attempts a bounded final worker
+   result fetch. Missing accounting/cleanup is UNAVAILABLE, never inferred from
+   command success. Repeat after fresh preflight to observe no stale work. Stop
+   immediately on unintended networking effects; restore ordinary connectivity.
+6. Keep raw manifests, endpoint/phone records, RTT text and captures under
+   ignored `output/stage1/`. Share only reviewed redacted-summary.json and
+   operator-report.md. Upload capture is retained privately but automatic
+   download-direction decoding is SKIPPED (`UPLOAD_CAPTURE_REQUIRES_REVIEW`)
+   both online and offline. Review upload captures by flow/direction explicitly;
+   unsupported capture/tool/queue evidence remains unavailable. No payload/pcap
+   enters the repository or public PR.
+
+The download topology exclusion screen uses nearest-rank p95 from actual reply
+lines, at least twenty idle and twenty loaded samples. Less than 20 ms baseline
+inflation is `UNSUITABLE_NO_BASELINE_INFLATION`; absent evidence is
+`INCONCLUSIVE_MISSING_BASELINE_LATENCY`. Both yield operator exit 3 even with
+intact transfers. Inflation above the screen is only
+`BASELINE_INFLATION_OBSERVED_REVIEW_REQUIRED`, not benefit. Partial intervals stay
+partial, and the earlier proposed repeated-pair benefit criteria still require
+review of load duration, recovery, loss, capture coverage and alternative causes.
+
+Independent adb-shell ping follows Android's default route, unlike the explicitly
+Network-bound experiment sockets. The later operator must confirm the requested
+transport is also the current default for RTT comparisons (or retain RTT as
+path-unverified). The tool does not infer same-path timing from a chosen Network.
+TCP_INFO is never substituted for independent timing. This is a review prerequisite
+for interpreting the topology screen, not automatic evidence of matching paths.
+
+Review COMPLETE/PARTIAL/SKIPPED/UNAVAILABLE and typed failures separately. Exact
+transfer integrity, socket acceptance, kernel readback, pacing observations,
+fairness, physical benefit and Stage decision are independent. Every report ends
+`AWAITING_REVIEWER_CONCLUSION`. A later reviewer supplies go/narrow/defer, including
+whether independent upload feasibility is sufficient if download is negative.
+No cellular/general-OEM, bufferbloat-benefit or Stage-pass claim is added here.
+
+#### Literal source/build validation for the readiness change
+
+JDK 21 selected with `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr`.
+Commands ran through `rtk proxy` with unfiltered logs retained locally at
+`output/stage1-source-final-gradle.log` and `output/stage1-source-final-python.log`.
+
+```text
+gradlew.bat --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 48s
+136 actionable tasks: 29 executed, 107 up-to-date
+JVM XML: tests=64 failures=0 errors=0 skipped=0
+Lint errors=0
+Lint warnings=66
+
+py -3 -m unittest discover -s tools -p "test_*.py" -v
+Ran 79 tests in 2.375s
+OK
+
+py -3 tools/verify_harness_build.py
+debug/arm64-v8a: selected NDK=28.2.13676358, harness=ON
+debug/armeabi-v7a: selected NDK=28.2.13676358, harness=ON
+debug/x86_64: selected NDK=28.2.13676358, harness=ON
+debug: three production stub libraries; debug harness packaging/manifest gate PASS
+release/arm64-v8a: selected NDK=28.2.13676358, harness=OFF
+release/armeabi-v7a: selected NDK=28.2.13676358, harness=OFF
+release/x86_64: selected NDK=28.2.13676358, harness=OFF
+release: three production stub libraries; debug harness packaging/manifest gate PASS
+release: harness mapping and DEX references=0
+
+py -3 output/stage1_source_review.py (local-only source/XML/link inspection script)
+Canonical/native Markdown local links: checked=87 broken=0
+Markdown fragment links: checked=0
+Production sources/build/native ABI delta=EMPTY
+Tracked output files=0
+Optional docs/RADIO_OPTIMIZATION.md=absent
+
+urllib.request.urlopen(..., timeout=30), for each reviewed primary-source link:
+200 https://man7.org/linux/man-pages/man7/tcp.7.html
+200 https://man7.org/linux/man-pages/man7/socket.7.html
+200 https://github.com/android-actions/setup-android/blob/v3/action.yml
+
+git diff --check
+exit=0 (Windows LF/CRLF conversion warnings only)
+```
+
+JVM/Python tests executed. New native JNI functions compiled on all three ABIs;
+instrumentation compiled but did not execute. Release compile/minification and
+packaging were UP-TO-DATE in the final run; earlier full validation executed
+release packaging (`136 actionable tasks: 37 executed, 99 up-to-date`). No cached
+source check is promoted to new runtime evidence. Existing SDK XML/deprecation
+warnings remain; no lint baseline or protection was weakened.
+
+One noncanonical hygiene attempt, `git -c core.autocrlf=false diff --check`,
+returned exit 1 with CRLF lines reported as trailing whitespace. That override
+changed Git's interpretation of the Windows checkout; normal repository
+`git diff --check` passed without altering repository line-ending configuration.
+No physical test, native runtime probe, instrumentation execution or Stage
+decision is implied. Final commit/PR and remote CI status accompany the task report.
+
 ### F-04 — adaptive delay/load autorate
 
 **Hypothesis:** bounded delay/load feedback responds more usefully to capacity
@@ -221,7 +417,7 @@ Debug implementation available; **Stage 1 UNPASSED**. The first narrow physical
 Wi-Fi acceptance/readback and integrity screens are recorded below. Transport
 effect, recovery under deliberate stalls, physical benefit, cellular efficacy
 and general compatibility remain **UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT**.
-F-03 is not implemented. Prompt 0's verdict was GO TO STAGE 1 WITH REQUIRED
+F-03 was not part of this original F-01/F-02 implementation. Prompt 0's verdict was GO TO STAGE 1 WITH REQUIRED
 DESIGN CHANGES; this harness applies its evidence, configuration, fresh-socket
 and ownership requirements.
 
@@ -382,7 +578,8 @@ py -3 tools\operator.py run --preset wifi-screen --transport wifi --endpoint-add
 py -3 tools\operator.py report --session output\stage1\<session-directory>
 ```
 
-The operator exposes only `wifi-screen`, `wifi-efficacy` and `cellular-paired`;
+The original operator exposed `wifi-screen`, `wifi-efficacy` and `cellular-paired`;
+the source-readiness extension above adds three reviewed presets.
 custom manifests remain a lower-level engineering interface. Zero attached
 authorized devices blocks. Multiple devices require `--serial` on that same
 preflight/run invocation. An ambiguous current Android transport requires a

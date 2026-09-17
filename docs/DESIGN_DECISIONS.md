@@ -66,6 +66,17 @@ stream. Queue placement and loss recovery must be proven in our adapter.
 
 ## Decision change record template
 
+2026-09-17, D-07/D-08/D-13 implementation clarification (debug only): the F-03
+adapter preserves the existing accepted-byte queue and adds protected sockets.
+FIN follows complete queue drain; connection completion additionally requires
+an exact receiver hash and EOF. Abort/reset requests and failed cleanup are
+explicit, with accepted-but-unwritten and kernel-accepted-but-unconfirmed bytes
+kept separate. Optional queue/TCP_INFO observation failure disables observation,
+not otherwise safe synthetic upload; unavailable bounded SO_SNDBUF verification
+blocks this experiment. Debug scoped capability contracts never enable production
+routes or equate AVAILABLE API evidence to physical efficacy. D-09 is unchanged;
+no valid packet AQM queue was identified. Evidence/procedures: EXPERIMENTS.
+
 Date / decision ID / proposed replacement / rationale / implementation commit /
 experiment and literal evidence links / effect on gates and public claims /
 review outcome. Do not mark a proposal accepted merely because it is documented.

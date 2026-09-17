@@ -23,6 +23,44 @@ import java.util.concurrent.CountDownLatch
 /** Loopback only; no VPN consent, routes, external server, or physical efficacy claim. */
 @RunWith(AndroidJUnit4::class)
 class SocketHarnessInstrumentationTest {
+    @Test fun nativeUploadFinReceiptAndRedactedExport() {
+        val executor = Executors.newSingleThreadExecutor()
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+            server.soTimeout = 5000
+            val receiver = executor.submit {
+                server.accept().use { peer ->
+                    peer.soTimeout = 5000
+                    val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    val buffer = ByteArray(1024)
+                    var count = 0L
+                    while (true) {
+                        val n = peer.getInputStream().read(buffer)
+                        if (n < 0) break
+                        digest.update(buffer, 0, n); count += n
+                    }
+                    assertEquals(4097L, count)
+                    val hash = digest.digest().joinToString("") { "%02x".format(it) }
+                    peer.getOutputStream().write((hash + "\n").toByteArray())
+                    peer.shutdownOutput()
+                }
+            }
+            try {
+                val endpoint = ExperimentConfig(server.inetAddress.hostAddress!!, server.localPort, 4097,
+                    durationMs = 5000, stallTimeoutMs = 1000)
+                val config = UploadConfig(endpoint, listOf(4097),
+                    com.bufferbloatshaper.harness.stream.StreamHarnessConfig(1000000, 4096, 4096, 65536, 65536,
+                        durationMs = 5000, stallTimeoutMs = 1000))
+                // Fake protection and scope: API loopback test only, never physical/protect evidence.
+                val scope = CapabilityScope(android.os.Build.VERSION.SDK_INT, "UNKNOWN", "UNKNOWN", BatchTransport.WIFI, false)
+                val result = UploadRunner(SocketNative).run(config, scope, AtomicBoolean(), { true }, {})
+                assertEquals("COMPLETE", result.outcome)
+                val json = result.toJson(config).toString()
+                assertFalse(json.contains(endpoint.address)); assertFalse(json.contains("\"port\""))
+                assertTrue(json.contains("SO_SNDBUF")); assertTrue(json.contains("UNVERIFIED"))
+                receiver.get(5, TimeUnit.SECONDS)
+            } finally { executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS) }
+        }
+    }
     @Test fun preparedRealServiceProtectsWithoutRouteAndCancelsCleanly() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         // Owner/emulator preparation is explicit. Never dismiss VPN consent or replace a VPN here.
@@ -73,6 +111,13 @@ class SocketHarnessInstrumentationTest {
     @Test fun invalidDescriptorPreservesNativeErrno() {
         assertEquals(9, TcpInfoRecord.decode(SocketNative.info(-1)).errno)
         assertEquals(9, SocketNative.option(-1, 0, true, 4096)[1].toInt())
+        assertEquals(9, SocketNative.option(-1, 2, true, 4096)[1].toInt())
+        assertEquals(-9, SocketNative.write(-1, byteArrayOf(1), 0, 1))
+        assertEquals(-22, SocketNative.write(-1, byteArrayOf(1), -1, 1))
+        assertEquals(-22, SocketNative.write(-1, byteArrayOf(1), 0, 2))
+        assertEquals(9, SocketNative.shutdownOutput(-1))
+        assertEquals(9, SocketNative.abort(-1))
+        assertNull(QueueObservation.decode(SocketNative.sendQueue(-1, false)).bytes)
     }
     @Test fun nativeSocketIsClosedOnDeniedProtection() {
         var observed = -1

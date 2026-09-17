@@ -1,10 +1,13 @@
 # Current Project Context
 
-Snapshot: 2026-09-14. This F-03 feasibility implementation starts from clean
-main `b1b3f62cb71a96e88be021d97b340274739fa220`, the merge of PR #8. Work on
-`codex/f03-stream-feasibility` adds only a deterministic debug-source-set TCP
-stream pacing/backpressure model and JVM tests. It creates no socket, TUN,
-route, production engine or physical evidence.
+Snapshot: 2026-09-17. Stage 1 source readiness starts from clean/current main
+`310a24856845cb7edfb7cca18bb2af0600d177bb`, the merge of PR #9, on
+`codex/stage1-physical-ready`. The debug F-03 adapter now connects the existing
+stream runner to controlled synthetic sources and protected Android/Linux TCP
+sockets. Capability contracts, bounded socket observations and the existing
+operator/endpoint workflow support a later frozen-commit physical campaign.
+No ADB, attached device, emulator, capture or physical experiment was used.
+**Stage 1 remains IN PROGRESS / UNPASSED.** Final commit/PR accompany the report.
 
 ## Reconciliation and next gate
 
@@ -15,9 +18,9 @@ keep IPv6 mandatory before broad/default/public activation. The reference
 queues are not production-ready. The harness implements separate experiment
 configuration and evidence layers, fresh socket baselines, length-safe native
 observations, bounded ownership and explicit failure. The protected-socket
-harness implements no F-03, AQM, autorate, gVisor, TUN forwarding or production
-capability framework. The separate debug stream model described below now
-implements only deterministic F-03 mechanics.
+harness now includes a separate F-03 physical adapter and debug capability
+contracts. It implements no packet AQM, autorate, gVisor, TUN forwarding or
+production capability activation.
 
 **Stage 1 remains UNPASSED.** One real arm64 phone on an explicitly selected
 Wi-Fi Network completed the baseline and SO_RCVBUF=65536 transfers with exact
@@ -45,9 +48,13 @@ upload; upload itself is not proven by this task.
 F-03 now has deterministic source-level feasibility for ordered byte integrity,
 fixed per-flow/global allocation and occupancy bounds, byte-budget pacing,
 deficit round-robin scheduling, partial writes/EAGAIN, read backpressure/resume,
-cancellation, half-close, reset, stalls and abrupt rate reduction. It is not yet
-wired to controlled Android TCP sockets or kernel send-buffer measurement, so it
-is not ready for a physical experiment. Stage 1 remains UNPASSED.
+cancellation, half-close, reset, stalls and abrupt rate reduction. Its new
+physical adapter has source-tested ownership, receipts and failure semantics;
+native calls and instrumentation compile, but have not executed in this task.
+SO_SNDBUF request/readback, userspace occupancy and optional socket queue
+observations are separate. Physical pacing/backpressure/fairness remains
+unverified. The next unpassed gate is the controlled physical campaign and
+reviewed go/narrow/defer decision, not production route activation.
 
 ## Checked-in implementation truth
 
@@ -57,8 +64,8 @@ is not ready for a physical experiment. Stage 1 remains UNPASSED.
 - Production service, native ABI/header, JNI bridge and stub are unchanged by
   the harness. No production route gate has passed. Existing lifetime/watchdog
   scaffolding is not real-engine evidence.
-- A separate debug-only Activity, bound VpnService and JNI library now run
-  no-route protected-socket F-01/F-02 experiments. No Builder/establish call,
+- A separate debug-only Activity, bound VpnService and JNI library support
+  no-route protected-socket F-01/F-02/F-03 experiments. No Builder/establish call,
   routes, DNS lookup, normal launcher entry, release component/library, or
   persistent native callback exists in that harness.
 - Native sockets are nonblocking and worker-owned. Protect succeeds before
@@ -94,7 +101,7 @@ is not ready for a physical experiment. Stage 1 remains UNPASSED.
   No usable replies remain UNAVAILABLE. TCP_INFO RTT stays separate and no
   latency-benefit conclusion is generated.
 - `tools/operator.py` provides stateless `preflight`, `run` and `report`
-  commands over the three reviewed presets. Every preflight/run invocation
+  commands over six reviewed presets. Every preflight/run invocation
   requires current endpoint/bind/port confirmation, discovers the currently
   attached device, and probes the requested Android transport; run then delegates
   to the existing batch path, which re-resolves Network per fresh socket. It
@@ -105,6 +112,11 @@ is not ready for a physical experiment. Stage 1 remains UNPASSED.
   allowlisted ABI and numeric kernel family from the already-redacted device
   context, plus the two fixed session-relative redacted artifact filenames.
   Arbitrary runtime strings and raw/private paths are never rendered.
+  An explicit `--source-commit` requires exact clean HEAD even if main advances;
+  APK provenance still must match. Cancellation attempts bounded retrieval of
+  final worker accounting before cleanup. Missing cleanup evidence is unavailable.
+  Download baseline p95 inflation below 20 ms is unsuitable/inconclusive;
+  missing samples are inconclusive. No positive efficacy verdict is generated.
 - `harness.stream.StreamPacingRunner` exists only in the debug source set. Its
   separate `StreamHarnessConfig` allocates fixed ring buffers, enforces total
   allocation/occupancy bounds, schedules flows with deficit round robin and
@@ -114,6 +126,18 @@ is not ready for a physical experiment. Stage 1 remains UNPASSED.
   synchronous runner retains no callback after return. Its queues contain
   already-accepted TCP stream bytes and are explicitly invalid for packet-drop
   or ECN AQM under D-09.
+- `UploadRunner` reuses that runner; it owns up to four nonblocking sockets,
+  requires protection before binding/connect, and fails if requested SO_SNDBUF
+  cannot be verified within its configured readback ceiling. Graceful FIN follows
+  drained queues; completion additionally requires exact receiver hashes and EOF.
+  Failure requests abort/reset and reports accepted-but-unwritten bytes separately
+  from kernel-accepted bytes whose delivery remains unconfirmed. One worker closes
+  every FD once. No other app's TCP stream is captured.
+- Debug `Stage1Capabilities` separates mandatory contracts from optional probes,
+  uses UNKNOWN/AVAILABLE/UNAVAILABLE and fixed redacted reasons, rejects stale or
+  changed Android/kernel/ABI/transport/IP-family scope, and has no production
+  activation caller. Forwarding/lifecycle contracts remain UNKNOWN; API observations
+  do not establish efficacy. Optional observation failure leaves its values null.
 - Production directional configuration still requires both positive limits.
   Its independent capability model remains Stage 3 work. Production shaping
   queues, calibration and validation remain disconnected scaffolding.
@@ -139,7 +163,9 @@ operator workflow and produced complete captures plus retained partial load-ping
 replies for its stated setup; broader host/device compatibility remains
 unverified. The operator implementation commit has successful CI. Live protection
 requires `Build, unit test, and lint`, zero approving reviews and no force-push;
-this task changes no protection and does not merge its PR.
+this task changes no protection and does not merge its PR. Starting main CI failed
+before compilation because SDK setup requested the removed `tools` package;
+the workflow now explicitly requests `platform-tools` and keeps all required checks.
 
 ## Documentation hierarchy
 
