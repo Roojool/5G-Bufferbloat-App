@@ -102,6 +102,9 @@ Launch and owner-run procedures are in [Experiments](EXPERIMENTS.md).
 The separate debug `harness.stream` F-03 runner is exercised by
 `testDebugUnitTest`; it opens no socket and is absent from release source. Its
 tests are deterministic source evidence, not physical pacing or forwarding.
+A separate debug UploadRunner now adapts it to protected TCP sockets and the
+same host endpoint/operator; all physical execution remains a separate gate.
+The verifier also rejects harness references in release mapping and DEX.
 For emulator-only execution use `:app:connectedDebugAndroidTest`; see
 [Testing](TESTING.md) for the optional prepared-service API test and exact evidence
 boundary. CI compiles instrumentation and runs no external-network tests.
@@ -126,6 +129,15 @@ assumptions. Exit codes: 0 completed command, 2 blocked prerequisite/input,
 3 failed or inconclusive experiment, 70 tooling/evidence-data failure, and
 130 owner abort. A zero exit is not an efficacy or Stage-pass conclusion;
 operator reports always end `AWAITING_REVIEWER_CONCLUSION`.
+
+The added `wifi-upload`/`cellular-upload` presets cover F-03 integrity, fairness,
+rate change, recovery and negative lifecycle screens; `wifi-paired` adds repeated
+randomized download pairs. See EXPERIMENTS before running. For a reviewed frozen
+source build add `--source-commit <full-sha>` on every preflight/run; clean HEAD
+must match exactly, while current device, Network and endpoint are rediscovered.
+Absent baseline loaded-latency inflation makes download efficacy unsuitable or
+inconclusive, even if transfer integrity passes. Expected negative upload cases
+remain failures for reviewer interpretation; exit 3 does not decide Stage 1.
 
 On Windows the operator run automatically probes TShark in `PATH` and standard
 Wireshark install locations, including Program Files, then maps the local bind

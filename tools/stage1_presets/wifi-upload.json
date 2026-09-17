@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "preset": "wifi-upload",
+  "transport": "wifi",
+  "failure_policy": "continue",
+  "budgets": {"max_run_bytes": 33554432, "max_total_bytes": 268435456, "max_run_seconds": 120, "max_total_seconds": 1200},
+  "rtt": {"method": "adb_shell_ping", "interval_ms": 200, "idle_count": 30, "load_count": 350},
+  "variants": [
+    {"id": "paced", "config": {"experiment": "upload", "expectedBytes": 16777216, "flowBytes": [16777216], "rateBytesPerSecond": 524288}},
+    {"id": "fairness", "config": {"experiment": "upload", "expectedBytes": 16842752, "flowBytes": [8388608, 65536, 8388608], "rateBytesPerSecond": 524288}},
+    {"id": "rate-reduction", "config": {"experiment": "upload", "expectedBytes": 16777216, "flowBytes": [16777216], "rateBytesPerSecond": 1048576, "rateChanges": [{"atMs": 2000, "rateBytesPerSecond": 262144}], "durationMs": 120000}},
+    {"id": "slow-recovery", "config": {"experiment": "upload", "expectedBytes": 4194304, "flowBytes": [4194304], "rateBytesPerSecond": 1048576, "receiverPauseMs": 2000, "receiverCadenceMs": 5, "receiverReadBytes": 4096}},
+    {"id": "stall-negative", "config": {"experiment": "upload", "expectedBytes": 16777216, "flowBytes": [16777216], "rateBytesPerSecond": 1048576, "receiverPauseMs": 10000, "stallTimeoutMs": 2000}},
+    {"id": "reset-negative", "config": {"experiment": "upload", "expectedBytes": 4194304, "flowBytes": [4194304], "rateBytesPerSecond": 1048576, "receiverResetAfterBytes": 32768}},
+    {"id": "deadline-negative", "config": {"experiment": "upload", "expectedBytes": 4194304, "flowBytes": [4194304], "rateBytesPerSecond": 16384, "durationMs": 1000, "stallTimeoutMs": 1000}}
+  ]
+}

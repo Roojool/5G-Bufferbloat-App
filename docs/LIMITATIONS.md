@@ -50,8 +50,12 @@ the configured minimum API 26 must not be assumed to honor the opt-out.
 This project does not promise coexistence with another VPN.
 [Android VPN guide](https://developer.android.com/develop/connectivity/vpn)
 
-A debug-only no-route F-01/F-02 harness can now collect socket-call observations
-from an owner-authorized synthetic endpoint. It does not prove download control,
+A debug-only no-route F-01/F-02 harness can collect receive socket-call observations;
+its separate F-03 adapter can generate controlled synthetic uploads through the
+existing stream pacer and collect userspace/kernel send-buffer observations.
+F-03 has source/build tests only, with no physical execution evidence. It reads
+no ordinary application's traffic. All these experiments use an owner-authorized
+synthetic endpoint. This harness does not prove upload/download efficacy,
 create a forwarding path, or pass Stage 1. Every physical efficacy outcome remains
 UNVERIFIED — REQUIRES PHYSICAL EXPERIMENT. See [Experiments](EXPERIMENTS.md).
 Host batch automation reduces manual repetition but does not change that boundary.

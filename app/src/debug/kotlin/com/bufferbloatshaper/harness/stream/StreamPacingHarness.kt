@@ -58,6 +58,10 @@ interface StreamSink {
 
 data class ControlledFlow(val source: StreamSource, val sink: StreamSink)
 
+/** Live occupancy is distinct from allocation and kernel queues. Bounded retention belongs to the observer. */
+data class StreamProgress(val atMs: Long, val rateBytesPerSecond: Long,
+    val queuedBytes: List<Int>, val acceptedBytes: List<Long>, val writtenBytes: List<Long>)
+
 interface StreamHarnessClock {
     fun nowMs(): Long
     fun pause(ms: Long)
@@ -128,6 +132,7 @@ class StreamPacingRunner(
         config: StreamHarnessConfig,
         flows: List<ControlledFlow>,
         cancelled: AtomicBoolean = AtomicBoolean(false),
+        observe: (StreamProgress) -> Unit = {},
     ): StreamHarnessResult {
         config.validate(flows.size)
         val start = clock.nowMs()
@@ -261,6 +266,10 @@ class StreamPacingRunner(
                     }
                     state.longestNoProgressMs = maxOf(state.longestNoProgressMs, now - state.lastProgressMs)
                 }
+
+                observe(StreamProgress(elapsed,
+                    appliedRateChanges.lastOrNull()?.rateBytesPerSecond ?: config.rateBytesPerSecond,
+                    states.map { it.queue.size }, states.map { it.acceptedBytes }, states.map { it.writtenBytes }))
 
                 if (progressed) lastGlobalProgress = now
                 if (states.any { !it.terminal } && now - lastGlobalProgress >= config.stallTimeoutMs) {

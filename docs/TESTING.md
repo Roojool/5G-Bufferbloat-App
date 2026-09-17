@@ -181,6 +181,14 @@ accepted/written hashes, fixed allocation/occupancy bounds, sustained
 backpressure, partial writes/EAGAIN, deficit-round-robin progress for bulk and
 short flows, cancellation/cleanup, half-close/reset and abrupt rate reduction.
 Their injected endpoints and clock use no Android socket or physical network.
+UploadExperimentTest additionally injects socket operations to test protect-before-
+bind/connect, denied/throwing protection, partial setup ownership, bounded kernel
+readback, pending-connect deadline, partial writes/EAGAIN/EINTR, cancellation,
+reset/stall/FIN failure, bounded malformed/mismatched/missing receipts, cleanup
+failure, optional observation failure and scoped/stale capability contracts.
+Kernel write acceptance cannot satisfy receiver delivery checks. Native upload
+loopback, JSON redaction and invalid-FD calls are compiled instrumentation checks;
+they remain unexecuted unless a later explicitly authorized test runs them.
 Endpoint tests use synthetic partial-write peers.
 Host tests cover manifest bounds, isolated presets, stable IDs, deterministic
 seeded pairing, redaction, hash classification, stop/continue policy, endpoint
@@ -197,6 +205,12 @@ documented exit classes. They use mocks and synthetic summaries only. The
 operator delegates experiment execution and capture analysis to the existing
 Stage 1 modules; it adds no second experiment implementation. Its report ending
 `AWAITING_REVIEWER_CONCLUSION` is an explicit human gate, not a failed result.
+Upload host tests use mocked peers/processes to test bounded presets and endpoint
+receive/hash/FIN/reset behavior, per-flow count/hash/cleanup classification,
+frozen clean-SHA enforcement, cancellation evidence retention, report redaction
+and unsuitable/inconclusive download topology. They open no network socket and
+invoke no ADB. Physical procedures are centralized in EXPERIMENTS; no source
+test declares a physical gate passed.
 Focused report tests also prove that only the allowlisted broad runtime scope is
 rendered, private decoys and arbitrary kernel suffixes are absent, artifact
 references are fixed session-relative redacted filenames, and consecutive run

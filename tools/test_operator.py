@@ -29,7 +29,7 @@ class OperatorTests(unittest.TestCase):
         return argparse.Namespace(**values)
 
     def test_only_reviewed_presets_are_exposed(self):
-        self.assertEqual(("wifi-screen", "wifi-efficacy", "cellular-paired"),
+        self.assertEqual(("wifi-screen", "wifi-efficacy", "cellular-paired", "wifi-paired", "wifi-upload", "cellular-upload"),
                          operator_tool.REVIEWED_PRESETS)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             operator_tool.parser().parse_args([

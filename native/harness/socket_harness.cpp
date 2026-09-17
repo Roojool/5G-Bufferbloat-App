@@ -7,6 +7,8 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <linux/sockios.h>
 #include <unistd.h>
 #include <vector>
 
@@ -82,7 +84,8 @@ JNI(jlongArray) METHOD(option)(JNIEnv* env, jobject, jint fd, jint kind, jboolea
 #else
         available = false;
 #endif
-    } else if (kind != 0) available = false;
+    } else if (kind == 2) option = SO_SNDBUF;
+    else if (kind != 0) available = false;
     if (!available) return longs(env, {0, -1, -1, -1, 0}); // no syscall attempted, no fabricated errno
     int setError = -1;
     if (set) setError = setsockopt(fd, level, option, &requested, sizeof(requested)) == 0 ? 0 : errno;
@@ -95,6 +98,35 @@ JNI(jlongArray) METHOD(info)(JNIEnv* env, jobject, jint fd) {
     socklen_t length = sizeof(info); // reset on every call; kernel may return a prefix
     int error = getsockopt(fd, IPPROTO_TCP, TCP_INFO, &info, &length) == 0 ? 0 : errno;
     return longs(env, decode(info, length, error));
+}
+JNI(jint) METHOD(write)(JNIEnv* env, jobject, jint fd, jbyteArray source, jint offset, jint length) {
+    if (offset < 0 || length < 1 || length > 16384 || offset > env->GetArrayLength(source) - length) return -EINVAL;
+    char buffer[16384];
+    env->GetByteArrayRegion(source, offset, length, reinterpret_cast<jbyte*>(buffer));
+    if (env->ExceptionCheck()) return -EINVAL;
+    auto count = send(fd, buffer, length, MSG_NOSIGNAL);
+    return count < 0 ? -errno : static_cast<jint>(count);
+}
+JNI(jint) METHOD(shutdownOutput)(JNIEnv*, jobject, jint fd) {
+    return shutdown(fd, SHUT_WR) == 0 ? 0 : errno;
+}
+JNI(jint) METHOD(abort)(JNIEnv*, jobject, jint fd) {
+    // Explicit failure only: request RST on the worker's following close. Never retry close.
+    linger value{1, 0};
+    return setsockopt(fd, SOL_SOCKET, SO_LINGER, &value, sizeof(value)) == 0 ? 0 : errno;
+}
+JNI(jlongArray) METHOD(sendQueue)(JNIEnv* env, jobject, jint fd, jboolean notSent) {
+    int request = SIOCOUTQ;
+    if (notSent) {
+#ifdef SIOCOUTQNSD
+        request = SIOCOUTQNSD;
+#else
+        return longs(env, {0, -1, -1});
+#endif
+    }
+    int value = 0;
+    int error = ioctl(fd, request, &value) == 0 ? 0 : errno;
+    return longs(env, {1, error, error ? -1 : value});
 }
 JNI(jlongArray) METHOD(decodeFixture)(JNIEnv* env, jobject, jint length, jint error) {
     tcp_info info{};

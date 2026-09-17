@@ -162,7 +162,7 @@ not a functioning packet engine.
 
 `harness/socket_harness.cpp` builds as `bufferbloat_socket_harness` only when
 Gradle debug enables `BB_BUILD_SOCKET_HARNESS`. The default is OFF, including
-release. This library opens ordinary nonblocking TCP sockets for F-01/F-02 only;
+release. This library opens ordinary nonblocking TCP sockets for F-01/F-02/F-03;
 it has no TUN/route/gVisor access and changes none of production ABI v2 above.
 Kotlin's sole worker protects before bind/connect, owns FD cleanup, hashes only
 the synthetic test stream, and exports bounded typed observations. Native calls

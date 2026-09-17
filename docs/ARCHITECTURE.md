@@ -120,7 +120,7 @@ TUN or releases the socket-protection callback.
   Download shaping is out of scope; never discard UDP/QUIC merely because it
   cannot use the TCP download controller.
 
-## Autorate, capabilities and device scope (planned)
+## Autorate and production capability integration (planned)
 
 Prefer adaptive feedback from independently measured delay and load, with bounded
 rate changes, sample aging, probe failure handling, idle/handover resets and an
@@ -132,7 +132,10 @@ Separate mandatory safe forwarding/lifecycle capabilities from optional socket
 controls and observations. Runtime probes on the actual Android/kernel/socket
 determine optional availability; unknown or failed probes disable the feature
 with a reason. Successful probes still need physical efficacy evidence. The
-existing ABI feature mask is a prerequisite contract, not this framework.
+existing ABI feature mask is a prerequisite contract, not this framework. A
+debug-only Stage 1 framework now implements scoped probe states and safe optional
+disablement; it has no production activation caller. Production integration and
+directional configuration below remain planned.
 Current configuration still requires positive upload and download limits.
 The following **future requirement** needs a separate implementation change:
 
@@ -177,7 +180,7 @@ The release implementation must preserve these invariants:
 | VPN lifecycle | `vpn` | Serialized service lifecycle and safe Android VPN ownership |
 | Native boundary | `nativeengine` / `native` | Kotlin/JNI ABI contract and intentionally unavailable native stub |
 | Shaping references | `shaping` | Unit-tested TokenBucket, CoDel-style AQM, and fair-queue reference logic; no live packet path |
-| F-03 stream feasibility | debug `harness.stream` | Deterministic bounded byte queues, pacing, fair scheduling, backpressure and teardown tests; no socket/TUN/route integration |
+| F-03 stream feasibility | debug `harness.stream` and `harness.UploadRunner` | Existing byte runner plus controlled synthetic sources, protected remote sockets, bounded observations and receiver receipts; no TUN/route integration |
 | Calibration | `calibration` | Network-state monitoring and independently supplied capacity-sample scaffold; no automatic update path |
 | Validation | `validation` | Validation-gate UI and grade model; no benchmark runs in the current build |
 | Local utilities | `util` | Preferences, notification, user-initiated redacted health-timeline diagnostic |
@@ -221,7 +224,40 @@ but undelivered bytes before deterministic close.
 
 This is a TCP **byte-stream queue after acceptance**, not a packet queue with
 retransmission ownership. It is therefore not a valid CoDel/drop/ECN AQM queue
-under D-09, and the harness exposes no drop operation. A later physical harness
-must add debug-only controlled TCP adapters, protect the remote-facing socket,
-bound/measure kernel send buffers, and retain the same counters before physical
-backpressure or pacing claims can be reviewed.
+under D-09, and the harness exposes no drop operation.
+
+The debug `UploadRunner` adapts this runner to synthetic sources and up to four
+protected OS TCP sockets through the existing JNI library. It owns each FD from
+open, before any callback, through a single close, including partial setup failure.
+Protect precedes Network binding and connect; SO_SNDBUF is requested and read back
+before/after connect. Failed, malformed or above-ceiling readback stops the run.
+The kernel value is neither live queue occupancy nor an exact memory allocation.
+Nonblocking send uses MSG_NOSIGNAL; partial offsets stay in the existing ring,
+EAGAIN/EINTR consume no budget. The bounded source stops producing when queues fill.
+
+Graceful completion drains queues then uses SHUT_WR (FIN), waits for a bounded
+65-byte receiver SHA-256 line and EOF on every socket, and closes. Receiver hashes
+are compared against exact written hashes; host verification also checks expected
+count/hash per flow. Local runner COMPLETE means write acceptance only. Failure,
+cancel, reset, stall or deadline requests SO_LINGER(1,0) and closes once; reset
+request errors are recorded and do not claim a wire RST. Accepted-but-unwritten
+and kernel-accepted-but-unconfirmed bytes remain explicit. No retry/resume of a
+failed stream is attempted. Setup, pacing and receipt share a 120-second maximum
+deadline; polls are at most 50 ms, pacing ticks 1 ms, receipt polling 1 ms.
+The existing two-second service join bound does not prove absence of OS/Binder
+hangs: unjoined work remains visible and is never concurrently closed.
+
+At most 480 samples retain live per-flow userspace occupancy/progress, actual
+sample intervals, configured rate, interval write-acceptance rates, TCP_INFO,
+SIOCOUTQ and SIOCOUTQNSD. Missing optional observations stay null with typed
+failure evidence. Allocation, occupancy, SO_SNDBUF request/readback, queued
+sequence bytes, throughput and radio/wire observations are not interchangeable.
+The owner endpoint hashes synthetic uploads only; it is not a project relay.
+
+Debug capability records use mandatory flags, UNKNOWN/AVAILABLE/UNAVAILABLE,
+fixed reasons and run-relative timestamps. Records expire after 120 seconds or
+scope change (Android API, numeric kernel family, ABI, transport and IP family).
+Each run/socket gets fresh records. Forwarding/safe-stop/health/flow-metric
+contracts are never inferred from debug probe success. No phone-model allowlist
+or production route call exists. Operator procedures and evidence meanings are
+in EXPERIMENTS; all new physical behavior remains unexecuted/unverified.

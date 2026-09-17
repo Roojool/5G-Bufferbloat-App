@@ -37,7 +37,7 @@ else:
     import stage1_batch as batch
 
 
-REVIEWED_PRESETS = ("wifi-screen", "wifi-efficacy", "cellular-paired")
+REVIEWED_PRESETS = ("wifi-screen", "wifi-efficacy", "cellular-paired", "wifi-paired", "wifi-upload", "cellular-upload")
 EXIT_SUCCESS = 0
 EXIT_BLOCKED = 2
 EXIT_EXPERIMENT_INCONCLUSIVE = 3
@@ -58,7 +58,7 @@ def validate_target(args: argparse.Namespace) -> None:
         )
     if args.preset not in REVIEWED_PRESETS:
         raise BlockedPrerequisite("preset is not in the reviewed Stage 1 set")
-    expected_transport = "cellular" if args.preset == "cellular-paired" else "wifi"
+    expected_transport = "cellular" if args.preset.startswith("cellular-") else "wifi"
     if args.transport != expected_transport:
         raise BlockedPrerequisite("requested transport does not match the reviewed preset")
     try:
@@ -93,6 +93,7 @@ def _batch_args(args: argparse.Namespace) -> argparse.Namespace:
         no_tshark=args.no_tshark,
         continue_on_failure=getattr(args, "continue_on_failure", False),
         allow_emulator=False,
+        source_commit=getattr(args, "source_commit", None),
     )
 
 
@@ -116,7 +117,8 @@ def _probe_current_transport(serial: str, transport: str, ordinal: int,
 
 def preflight_command(args: argparse.Namespace) -> int:
     validate_target(args)
-    source = batch.git_state()
+    frozen = getattr(args, "source_commit", None)
+    source = batch.git_state(frozen) if frozen else batch.git_state()
     _, settings, _ = batch.load_manifest(batch.PRESETS / f"{args.preset}.json")
     if settings.get("transport") != args.transport:
         raise BlockedPrerequisite("reviewed preset transport changed; operator refuses the mismatch")
@@ -162,6 +164,8 @@ def preflight_command(args: argparse.Namespace) -> int:
 def _experiment_exit(summary: dict[str, Any]) -> int:
     runs = summary.get("runs")
     if summary.get("batch_status") != "COMPLETE" or not isinstance(runs, list) or not runs:
+        return EXIT_EXPERIMENT_INCONCLUSIVE
+    if any(run.get("evidence_layers", {}).get("download_topology", "").startswith(("UNSUITABLE", "INCONCLUSIVE")) for run in runs):
         return EXIT_EXPERIMENT_INCONCLUSIVE
     return (EXIT_SUCCESS if all(isinstance(run, dict) and run.get("run_status") == "SCREEN_COMPLETE"
                                 for run in runs) else EXIT_EXPERIMENT_INCONCLUSIVE)
@@ -330,7 +334,10 @@ def render_report(summary: dict[str, Any]) -> str:
             f"- zero-window/probe/retransmission observations: {_number(derived.get('receiver_zero_window_frames'))}/{_number(derived.get('sender_zero_window_probe_frames'))}/{_number(derived.get('sender_retransmission_frames'))}",
             f"- sender bytes-in-flight peak: {_number(derived.get('sender_bytes_in_flight_peak'))}",
             f"- physical benefit: {_known(layers.get('physical_benefit'), layer_values)}",
+            f"- download baseline topology: {_known(layers.get('download_topology'), {'INCONCLUSIVE_MISSING_BASELINE_LATENCY', 'UNSUITABLE_NO_BASELINE_INFLATION', 'BASELINE_INFLATION_OBSERVED_REVIEW_REQUIRED'})}",
         ])
+        if phone_result.get("experiment") == "upload":
+            lines.extend(_upload_lines(phone_result))
         options = phone_result.get("options") if isinstance(phone_result.get("options"), list) else []
         for option_index, option in enumerate(options[:20], 1):
             if not isinstance(option, dict):
@@ -351,6 +358,37 @@ def render_report(summary: dict[str, Any]) -> str:
         REPORT_END,
     ])
     return "\n".join(lines) + "\n"
+
+
+def _upload_lines(result: dict[str, Any]) -> list[str]:
+    stream = result.get("stream") if isinstance(result.get("stream"), dict) else {}
+    plan = result.get("plan") if isinstance(result.get("plan"), dict) else {}
+    lines = [f"- F-03 outcome: {_known(result.get('outcome'), {'COMPLETE', 'CANCELLED', 'DEADLINE', 'STALLED', 'PARTIAL_FAILURE', 'PROTECT_FAILED', 'SEND_BUFFER_UNAVAILABLE', 'CONNECT_FAILED', 'RECEIPT_STALLED', 'RECEIPT_FAILED', 'RECEIPT_MALFORMED', 'RECEIPT_EXCESS', 'INTEGRITY_FAILED', 'CLEANUP_FAILED', 'CALLBACK_OR_INTERNAL_FAILURE'})}",
+             "- F-03 socket write acceptance is not wire departure; queue samples are not kernel memory allocation."]
+    for key in ("per_flow_buffer_bytes", "global_buffer_bytes", "requested_sndbuf_bytes",
+                "max_kernel_sndbuf_readback_bytes", "rate_bytes_per_second", "burst_bytes"):
+        lines.append(f"- configured {key}: {_number(plan.get(key))}")
+    for key in ("allocated_queue_bytes", "read_scratch_bytes", "max_global_queued_bytes", "total_accepted_bytes",
+                "total_written_bytes", "write_acceptance_bytes_per_second", "pacing_wait_count", "elapsed_ms"):
+        lines.append(f"- observed {key}: {_number(stream.get(key))}")
+    for index, flow in enumerate(stream.get("flows", [])[:4]):
+        if not isinstance(flow, dict):
+            continue
+        values = "; ".join(f"{key}={_number(flow.get(key))}" for key in
+            ("accepted_bytes", "written_bytes", "undelivered_accepted_bytes", "first_write_at_ms", "completed_at_ms",
+             "write_eagain_count", "partial_write_count", "read_backpressure_count", "read_resume_count"))
+        lines.append(f"- flow {index}: {values}")
+    for index, sock in enumerate(result.get("sockets", [])[:4]):
+        if not isinstance(sock, dict):
+            continue
+        lines.append(f"- socket {index}: receipt={_known(sock.get('receipt_status'), {'COMPLETE', 'UNAVAILABLE'})}; "
+                     f"abort_errno={_number(sock.get('abort_errno'))}; close_errno={_number(sock.get('close_errno'))}")
+        for option in sock.get("options", [])[:2]:
+            if isinstance(option, dict):
+                lines.append(f"- SO_SNDBUF readback={_number(option.get('returned'))}; "
+                             f"set_errno={_number(option.get('set_errno'))}; get_errno={_number(option.get('get_errno'))}")
+    lines.append("- Exact hashes, per-flow live occupancy, socket queues, TCP_INFO and scoped capabilities: redacted-summary.json; review required.")
+    return lines
 
 
 def _load_session_summary(session: Path) -> tuple[Path, dict[str, Any]]:
@@ -405,6 +443,7 @@ def _target_arguments(parser: argparse.ArgumentParser, *, run: bool) -> None:
     parser.add_argument("--confirm-endpoint-bind", action="store_true",
                         help="confirm endpoint, bind address and port for this invocation only")
     parser.add_argument("--serial", help="required on this invocation when multiple devices are attached")
+    parser.add_argument("--source-commit", help="full frozen source SHA; clean HEAD must match on this invocation")
     parser.add_argument("--network-ordinal", type=int, default=-1,
                         help="current-session selection when eligible Android Networks are ambiguous")
     parser.add_argument("--build", action="store_true")

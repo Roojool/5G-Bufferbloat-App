@@ -230,6 +230,8 @@ def resolve_capture_setup(bind_address: str, explicit_path: str | None,
 
 
 def _config(config: dict[str, Any]) -> dict[str, Any]:
+    if config.get("experiment") == "upload":
+        return upload_config(config)
     allowed = {"expectedBytes", "receiveBuffer", "clamp", "cadenceMs", "readBytes",
                "changes", "durationMs", "stallTimeoutMs"}
     if set(config) - allowed:
@@ -265,6 +267,48 @@ def _config(config: dict[str, Any]) -> dict[str, Any]:
                 raise Stage1Error(f"dynamic {key} outside harness bounds")
         if "cadenceMs" in change and not 0 <= int(change["cadenceMs"]) <= 2_000:
             raise Stage1Error("dynamic cadence outside harness bounds")
+    return result
+
+
+def upload_config(config: dict[str, Any]) -> dict[str, Any]:
+    defaults = {"experiment": "upload", "durationMs": 60000, "stallTimeoutMs": 10000,
+                "burstBytes": 16384, "quantumBytes": 4096, "perFlowBufferBytes": 65536,
+                "globalBufferBytes": 262144, "sendBufferBytes": 16384,
+                "maxKernelSendBufferBytes": 131072, "receiverPauseMs": 0,
+                "receiverCadenceMs": 0, "receiverReadBytes": 16384, "receiverResetAfterBytes": 0,
+                "rateChanges": []}
+    if set(config) - (set(defaults) | {"expectedBytes", "flowBytes", "rateBytesPerSecond"}):
+        raise Stage1Error("unknown upload configuration key")
+    result = {**defaults, **config}
+    def bounded(key, low, high):
+        value = result.get(key)
+        if type(value) is not int or not low <= value <= high:
+            raise Stage1Error(f"upload {key} outside bounds")
+    for key, low, high in (("expectedBytes", 1, MAX_RUN_BYTES), ("durationMs", 1000, 120000),
+            ("stallTimeoutMs", 500, 30000), ("rateBytesPerSecond", 1, 100000000),
+            ("burstBytes", 1, 1048576), ("quantumBytes", 1, 65536), ("perFlowBufferBytes", 1, 1048576),
+            ("globalBufferBytes", 1, 16777216), ("sendBufferBytes", 1, 1048576),
+            ("maxKernelSendBufferBytes", 1, 4194304), ("receiverPauseMs", 0, 30000),
+            ("receiverCadenceMs", 0, 100), ("receiverReadBytes", 1, 16384), ("receiverResetAfterBytes", 0, MAX_RUN_BYTES)):
+        bounded(key, low, high)
+    flows = result.get("flowBytes")
+    if not isinstance(flows, list) or not 1 <= len(flows) <= 4 or any(type(n) is not int or not 1 <= n <= MAX_RUN_BYTES for n in flows):
+        raise Stage1Error("invalid bounded upload flows")
+    if sum(flows) != result["expectedBytes"] or result["perFlowBufferBytes"] * len(flows) > result["globalBufferBytes"]:
+        raise Stage1Error("upload aggregate bound mismatch")
+    if result["burstBytes"] > result["globalBufferBytes"] or result["stallTimeoutMs"] > result["durationMs"]:
+        raise Stage1Error("upload burst/stall bound mismatch")
+    changes = result["rateChanges"]
+    if not isinstance(changes, list) or len(changes) > 16:
+        raise Stage1Error("invalid upload rate changes")
+    previous = 0
+    for change in changes:
+        if not isinstance(change, dict) or set(change) != {"atMs", "rateBytesPerSecond"}:
+            raise Stage1Error("invalid upload rate change")
+        at, rate = change["atMs"], change["rateBytesPerSecond"]
+        if type(at) is not int or type(rate) is not int or not previous < at < result["durationMs"] or not 1 <= rate <= 100000000:
+            raise Stage1Error("invalid upload rate change bounds")
+        previous = at
     return result
 
 
@@ -356,6 +400,28 @@ def load_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any], dic
 def classify_result(phone: dict[str, Any] | None, endpoint: dict[str, Any] | None,
                     expected_bytes: int, expected_hash: str, variant: dict[str, Any]) -> dict[str, Any]:
     result = (phone or {}).get("result") if (phone or {}).get("status") == "RESULT" else None
+    if variant.get("experiment") == "upload":
+        local = (result or {}).get("stream", {}).get("flows", [])
+        remote = (endpoint or {}).get("flows", [])
+        receipts = (result or {}).get("sockets", [])
+        counts = variant["flowBytes"]
+        valid = bool(result and not phone.get("host_completion_reason") and result.get("outcome") == "COMPLETE" and
+                     (phone or {}).get("cleanup_joined") is True and
+                     (endpoint or {}).get("outcome") == "COMPLETE" and
+                     len(local) == len(remote) == len(receipts) == len(counts))
+        for i, count in enumerate(counts):
+            if not valid:
+                break
+            digest = socket_endpoint.expected_hash(count)
+            valid = (local[i].get("accepted_bytes") == local[i].get("written_bytes") == remote[i].get("accepted_bytes") == count
+                     and local[i].get("accepted_sha256") == local[i].get("written_sha256") == remote[i].get("sha256") == digest
+                     and receipts[i].get("receipt_sha256") == digest and receipts[i].get("close_errno") == 0
+                     and local[i].get("undelivered_accepted_bytes") == 0 and remote[i].get("outcome") == "COMPLETE")
+        return {"run_status": "SCREEN_COMPLETE" if valid else "FAILED_OR_INCONCLUSIVE",
+                "acceptance_readback": "OBSERVED_SEPARATELY" if result else "UNAVAILABLE",
+                "sender_transport_effect": UNVERIFIED,
+                "integrity": "VERIFIED_FOR_THIS_TRANSFER" if valid else "FAILED_OR_UNVERIFIED",
+                "recovery": UNVERIFIED, "physical_benefit": UNVERIFIED}
     phone_match = bool(result and result.get("outcome") == "COMPLETE" and
                        result.get("bytes") == expected_bytes and result.get("sha256") == expected_hash)
     endpoint_match = bool(endpoint and endpoint.get("outcome") == "COMPLETE" and
@@ -370,7 +436,7 @@ def classify_result(phone: dict[str, Any] | None, endpoint: dict[str, Any] | Non
         records = [item for item in (result or {}).get("options", [])
                    if item.get("phase") == "before_connect" and item.get("kind") == kind and item.get("requested") == requested]
         option_ok = option_ok and bool(records and records[0].get("set_errno") == 0)
-    passed = phone_match and endpoint_match and option_ok
+    passed = phone_match and endpoint_match and option_ok and not (phone or {}).get("host_completion_reason")
     return {
         "run_status": "SCREEN_COMPLETE" if passed else "FAILED_OR_INCONCLUSIVE",
         "acceptance_readback": "OBSERVED_SEPARATELY" if result else "UNAVAILABLE",
@@ -394,13 +460,17 @@ def execute_sequence(runs: list[dict[str, Any]], execute: Callable[[dict[str, An
 
 
 class EndpointProcess:
-    def __init__(self, bind: str, port: int, count: int, timeout: int, log_path: Path):
+    def __init__(self, bind: str, port: int, count: int, timeout: int, log_path: Path,
+                 upload: dict[str, Any] | None = None):
         self.lines: list[str] = []
         self.ready = threading.Event()
         self.log_path = log_path
+        extra = ([] if upload is None else ["--upload-flow-bytes", ",".join(map(str, upload["flowBytes"])),
+            "--pause-ms", str(upload["receiverPauseMs"]), "--cadence-ms", str(upload["receiverCadenceMs"]),
+            "--read-bytes", str(upload["receiverReadBytes"]), "--reset-after", str(upload["receiverResetAfterBytes"])])
         self.process = subprocess.Popen(
             [sys.executable, str(ROOT / "tools" / "socket_endpoint.py"), "--bind", bind,
-             "--port", str(port), "--bytes", str(count), "--connections", "1", "--timeout", str(timeout)],
+             "--port", str(port), "--bytes", str(count), "--connections", "1", "--timeout", str(timeout)] + extra,
             cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
         self.reader = threading.Thread(target=self._read, daemon=True)
@@ -540,17 +610,22 @@ def device_context(serial: str, allow_emulator: bool) -> dict[str, Any]:
             "target_kind": "emulator" if emulator else "physical"}
 
 
-def git_state() -> dict[str, str]:
+def git_state(frozen_commit: str | None = None) -> dict[str, str]:
     dirty = command(["git", "status", "--porcelain=v1"], timeout=15).stdout.strip()
     if dirty:
         raise Stage1Error("working tree is not clean; commit/stash unrelated work before physical evidence")
     command(["git", "fetch", "origin", "main"], timeout=60)
     head = command(["git", "rev-parse", "HEAD"]).stdout.strip()
     main = command(["git", "rev-parse", "origin/main"]).stdout.strip()
-    ancestry = command(["git", "merge-base", "--is-ancestor", main, head], check=False)
-    if ancestry.returncode:
-        raise Stage1Error("current checkout does not contain current origin/main")
-    return {"git_sha": head, "origin_main_sha": main, "working_tree": "clean"}
+    if frozen_commit is not None:
+        if not re.fullmatch(r"[0-9a-f]{40}", frozen_commit) or head != frozen_commit:
+            raise Stage1Error("checkout does not match the explicit frozen source commit")
+    else:
+        ancestry = command(["git", "merge-base", "--is-ancestor", main, head], check=False)
+        if ancestry.returncode:
+            raise Stage1Error("current checkout does not contain current origin/main")
+    return {"git_sha": head, "origin_main_sha": main, "working_tree": "clean",
+            "source_policy": "EXPLICIT_FROZEN_COMMIT" if frozen_commit else "CURRENT_MAIN_ANCESTRY"}
 
 
 def build_and_verify(serial: str, source: dict[str, str], build: bool, install: bool,
@@ -621,6 +696,16 @@ def cancel_android(serial: str, run_id: str) -> None:
         "--es", "run_id", run_id, timeout=15, check=False)
 
 
+def cancel_and_collect(serial: str, run_id: str, token: str, run_dir: Path, fallback: str) -> dict[str, Any]:
+    """Retain worker byte/cleanup evidence; command acceptance alone never proves cancellation."""
+    try:
+        cancel_android(serial, run_id)
+        result = remote_result(serial, token, 5, run_dir / "ABORT_CLEANUP_WAIT")
+        return {**result, "host_completion_reason": fallback}
+    except (Stage1Error, subprocess.TimeoutExpired, OSError, KeyboardInterrupt):
+        return {"status": fallback, "cleanup_evidence": "UNAVAILABLE"}
+
+
 def ping_command(serial: str, address: str, count: int, interval_ms: int) -> list[str]:
     return ["adb", "-s", serial, "shell", "ping", "-n", "-c", str(count), "-i", f"{interval_ms / 1000:.3f}", address]
 
@@ -658,7 +743,21 @@ def ping_summary(path: Path, returncode: int | None, requested_count: int | None
         result["status"] = "RECORDED_PARTIAL"
     if result["observed_replies"] == 0:
         result["observation_reason"] = "NO_USABLE_REPLIES"
+    result["reply_sample_count"] = len(replies)
+    result["reply_p95_ms"] = sorted(replies)[math.ceil(len(replies) * .95) - 1] if replies else None
     return result
+
+
+def topology_screen(idle: dict[str, Any], load: dict[str, Any]) -> str:
+    """Predeclared exclusion screen only; never an efficacy verdict."""
+    if any(item.get("status") not in ("RECORDED", "RECORDED_PARTIAL") or
+           item.get("reply_sample_count", 0) < 20 or
+           not isinstance(item.get("reply_p95_ms"), (float, int)) for item in (idle, load)):
+        return "INCONCLUSIVE_MISSING_BASELINE_LATENCY"
+    inflation = load["reply_p95_ms"] - idle["reply_p95_ms"]
+    if not math.isfinite(inflation):
+        return "INCONCLUSIVE_MISSING_BASELINE_LATENCY"
+    return "BASELINE_INFLATION_OBSERVED_REVIEW_REQUIRED" if inflation >= 20 else "UNSUITABLE_NO_BASELINE_INFLATION"
 
 
 def load_ping_summary(collector: OptionalProcess, returncode: int, requested_count: int,
@@ -671,7 +770,8 @@ def load_ping_summary(collector: OptionalProcess, returncode: int, requested_cou
 
 
 def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
-    source = git_state()
+    frozen = getattr(args, "source_commit", None)
+    source = git_state(frozen) if frozen else git_state()
     manifest_path = Path(args.manifest) if args.manifest else PRESETS / f"{args.preset}.json"
     runs, settings, original = load_manifest(manifest_path)
     if args.transport and args.transport != settings["transport"]:
@@ -763,8 +863,10 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                 except OSError:
                     capture_status = "SKIPPED_TSHARK_START_FAILED"
                     capture_reason = "TShark could not start"
-            endpoint = EndpointProcess(args.bind_address, args.port, expected_bytes,
-                                       min(300, int(config["durationMs"]) // 1000 + 30), run_dir / "endpoint.private.jsonl")
+            endpoint_args = (args.bind_address, args.port, expected_bytes,
+                             min(300, int(config["durationMs"]) // 1000 + 30), run_dir / "endpoint.private.jsonl")
+            endpoint = (EndpointProcess(*endpoint_args, upload=config) if config.get("experiment") == "upload"
+                        else EndpointProcess(*endpoint_args))
             endpoint.wait_ready()
             if rtt.get("method") == "adb_shell_ping" and int(rtt.get("load_count", 0)) > 0:
                 load_ping = OptionalProcess(ping_command(serial, args.endpoint_address, int(rtt["load_count"]), int(rtt["interval_ms"])),
@@ -778,12 +880,11 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             except subprocess.TimeoutExpired:
                 pass
         except KeyboardInterrupt:
-            cancel_android(serial, run["run_id"])
-            phone = {"status": "OWNER_ABORTED"}
+            phone = cancel_and_collect(serial, run["run_id"], token, run_dir, "OWNER_ABORTED")
             aborted = True
         except (Stage1Error, subprocess.TimeoutExpired, OSError) as exc:
-            cancel_android(serial, run["run_id"])
-            phone = {"status": "HOST_FAILURE", "reason": type(exc).__name__}
+            phone = cancel_and_collect(serial, run["run_id"], token, run_dir, "HOST_FAILURE")
+            phone["reason"] = type(exc).__name__
         finally:
             if endpoint:
                 endpoint.stop()
@@ -792,12 +893,17 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             if capture:
                 capture.stop()
             adb(serial, "shell", "run-as", PACKAGE, "rm", "-f", f"files/stage1_batch/{token}.json", check=False)
-        load_result = (load_ping_summary(load_ping, load_code, int(rtt["load_count"]), phone)
+        load_context = {"status": phone["host_completion_reason"]} if phone and "host_completion_reason" in phone else phone
+        load_result = (load_ping_summary(load_ping, load_code, int(rtt["load_count"]), load_context)
                        if load_ping else {"method": "none", "status": "SKIPPED"})
         layers = classify_result(phone, endpoint_result, expected_bytes, expected_hash, config)
+        if settings["preset"] in ("wifi-efficacy", "wifi-paired", "cellular-paired") and run["variant"].startswith("baseline"):
+            layers["download_topology"] = topology_screen(idle_result, load_result)
         try:
-            transport = stage1_capture.analyze_capture(capture_setup.get("tshark_path"),
+            transport = (stage1_capture.skipped("UPLOAD_CAPTURE_REQUIRES_REVIEW") if config.get("experiment") == "upload"
+                else stage1_capture.analyze_capture(capture_setup.get("tshark_path"),
                 run_dir / "sender.private.pcapng", args.bind_address, args.port, run_dir, expected_bytes)
+            )
         except KeyboardInterrupt:
             transport = stage1_capture.skipped("OWNER_ABORTED_ANALYSIS")
             aborted = True  # still checkpoint the completed transfer below
@@ -834,13 +940,14 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     source = result.add_mutually_exclusive_group(required=True)
-    source.add_argument("--preset", choices=("wifi-screen", "wifi-efficacy", "cellular-paired"))
+    source.add_argument("--preset", choices=tuple(path.stem for path in PRESETS.glob("*.json")))
     source.add_argument("--manifest", type=Path)
     result.add_argument("--endpoint-address", required=True, help="Numeric address reachable from the selected phone Network")
     result.add_argument("--bind-address", help="Numeric owner-host bind address; defaults to endpoint address")
     result.add_argument("--port", type=int, default=39001)
     result.add_argument("--transport", choices=("wifi", "cellular"))
     result.add_argument("--serial", help="ADB selector; never copied to the redacted summary")
+    result.add_argument("--source-commit", help="explicit full frozen SHA; clean HEAD must match exactly")
     result.add_argument("--network-ordinal", type=int, default=-1, help="Zero-based eligible transport Network when Android reports ambiguity")
     result.add_argument("--build", action="store_true", help="Build and record the current clean debug APK")
     result.add_argument("--install", action="store_true", help="Build if needed and install the exact debug APK")

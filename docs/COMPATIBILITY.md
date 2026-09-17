@@ -30,14 +30,14 @@ is declared. This is not proof of runtime support on API 26–35 or newer device
 The checked-in build is intentionally unavailable as a traffic shaper. Current
 submission policy is recorded separately in [Play Compliance](PLAY_COMPLIANCE.md).
 
-## Feature/capability support model (planned framework)
+## Feature/capability support model (debug framework; production integration planned)
 
 | Capability | Current evidence/status | Required gate |
 |---|---|---|
 | Stub packaging / pre-route unavailable check | Source and CI evidence; no real traffic | Maintain negative lifecycle/ABI tests |
 | IPv4 TCP and UDP/QUIC forwarding | Not implemented | Mandatory integrity/protection/lifecycle tests |
 | IPv6 forwarding | Not implemented; future IPv4-only path allows bypass | Early dual-stack/IPv6-only evidence before whole-device claims |
-| TCP upload pacing/fairness/backpressure | Debug-only deterministic stream runner passes bounded buffering, ordered integrity, pacing, fairness, backpressure and teardown unit cases; no live socket or forwarding path | Controlled protected-socket/kernel-buffer evidence, then forwarding and physical load evidence |
+| TCP upload pacing/fairness/backpressure | Debug-only deterministic runner plus protected-socket physical adapter, synthetic source, bounded send-buffer observations and receiver integrity receipts; source-tested, physical adapter unexecuted | Controlled physical protected-socket/kernel-buffer evidence, then forwarding and physical load evidence |
 | TCP download control | Experimental proposal; no implementation | Protected-socket effect and physical latency/throughput evidence |
 | SO_RCVBUF / TCP_WINDOW_CLAMP / TCP_INFO | Narrow arm64/API 31/Wi-Fi runtime probes and exact integrity. The complete-capture efficacy pair specifically tested SO_RCVBUF=65536 and adds strong sender-visible receive-window control for that scope. The earlier ten-run batch separately provides TCP_WINDOW_CLAMP window/recovery observations with retained capture gaps (EXPERIMENTS). | Repeated/randomized efficacy, benefit and cellular evidence still required |
 | Adaptive autorate | Not implemented | Independent delay/load, stability and safe fallback evidence |
@@ -52,8 +52,12 @@ Static ABI requirements remain necessary but are not dynamic socket probes.
 
 Missing optional download control must be reported without disabling independently
 proven forwarding/upload capabilities. Missing mandatory forwarding, protection
-or safe-stop capability must block route activation. This framework and UI are
-planned: current configuration still requires both positive upload/download caps.
+or safe-stop capability must block route activation. Debug Stage1Capabilities
+now models scoped UNKNOWN/AVAILABLE/UNAVAILABLE outcomes, stale/malformed/failure
+reasons and mandatory versus optional disablement. It is disconnected from route
+activation; production integration/UI are planned. Current production configuration
+still requires both positive upload/download caps. No physical compatibility row
+is added by these source tests.
 
 ## Required public-release matrix
 
