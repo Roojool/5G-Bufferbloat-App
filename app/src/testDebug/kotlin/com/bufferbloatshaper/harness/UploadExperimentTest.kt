@@ -129,6 +129,15 @@ class UploadExperimentTest {
         for (fd in 10..11) assertEquals(1, ops.events.count { it == "close:$fd" })
     }
 
+    @Test fun cancellationWhileProtectionReturnsPreventsBindAndConnect() {
+        val ops = Ops(Clock())
+        val token = AtomicBoolean()
+        val result = run(ops, cancel = token, protect = { token.set(true); true })
+        assertEquals("CANCELLED", result.outcome)
+        assertNull(result.stream)
+        assertEquals(listOf("open:10", "abort:10", "close:10"), ops.events)
+    }
+
     @Test fun missingOrExcessiveSendBufferReadbackBlocksBeforeConnect() {
         for (variant in 0..2) {
             val ops = Ops(Clock())
@@ -189,6 +198,7 @@ class UploadExperimentTest {
         assertTrue(result.samples.flatMap { it.tcpInfo }.all { it.fields.values.all { value -> value == null } })
         assertEquals(CapabilityState.UNAVAILABLE, result.capabilities.first().getValue("TCP_INFO").state)
         assertNull(QueueObservation.decode(longArrayOf(1, 0)).bytes)
+        assertNull(QueueObservation.decode(longArrayOf(1, 0)).available)
         assertNull(QueueObservation.decode(longArrayOf(0, -1, 999)).bytes)
         val malformed = Ops(Clock()); malformed.malformedInfo = true
         val degraded = run(malformed)

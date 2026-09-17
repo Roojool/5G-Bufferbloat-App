@@ -246,6 +246,9 @@ failed stream is attempted. Setup, pacing and receipt share a 120-second maximum
 deadline; polls are at most 50 ms, pacing ticks 1 ms, receipt polling 1 ms.
 The existing two-second service join bound does not prove absence of OS/Binder
 hangs: unjoined work remains visible and is never concurrently closed.
+Protection executes outside the lifecycle lock so a stuck platform call cannot
+block cancellation from reaching that bounded join. A cancellation observed after
+protection returns stops before binding/connect; no callback survives worker return.
 
 At most 480 samples retain live per-flow userspace occupancy/progress, actual
 sample intervals, configured rate, interval write-acceptance rates, TCP_INFO,

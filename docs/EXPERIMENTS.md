@@ -327,9 +327,9 @@ Commands ran through `rtk proxy` with unfiltered logs retained locally at
 
 ```text
 gradlew.bat --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
-BUILD SUCCESSFUL in 51s
+BUILD SUCCESSFUL in 48s
 136 actionable tasks: 29 executed, 107 up-to-date
-JVM XML: tests=63 failures=0 errors=0 skipped=0
+JVM XML: tests=64 failures=0 errors=0 skipped=0
 Lint errors=0
 Lint warnings=66
 

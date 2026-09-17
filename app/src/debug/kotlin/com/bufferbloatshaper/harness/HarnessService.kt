@@ -47,7 +47,10 @@ class HarnessService : VpnService() {
         executor.execute {
             try {
                 val protector: (Int) -> Boolean = { fd ->
-                    synchronized(gate) { !stopped && !token.get() && protect(fd) }
+                    // Do not hold the lifecycle lock across a platform/Binder call:
+                    // teardown must be able to cancel and report an unjoined worker.
+                    val allowed = synchronized(gate) { !stopped && !token.get() }
+                    allowed && protect(fd)
                 }
                 val binder: (Int) -> Unit = { fd ->
                     // fromFd duplicates the descriptor; bindSocket affects the same socket.

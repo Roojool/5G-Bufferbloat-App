@@ -23,10 +23,10 @@ data class UploadConfig(val endpoint: ExperimentConfig, val flowBytes: List<Long
     }
 }
 
-data class QueueObservation(val available: Boolean, val errno: Int?, val bytes: Long?) {
+data class QueueObservation(val available: Boolean?, val errno: Int?, val bytes: Long?) {
     companion object {
         fun decode(raw: LongArray): QueueObservation {
-            if (raw.size != 3) return QueueObservation(false, null, null)
+            if (raw.size != 3 || raw[0] !in 0L..1L) return QueueObservation(null, null, null)
             return QueueObservation(raw[0] == 1L, raw[1].takeIf { it >= 0 }?.toInt(),
                 raw[2].takeIf { raw[0] == 1L && raw[1] == 0L && it >= 0 })
         }
@@ -147,7 +147,7 @@ class UploadRunner(private val ops: UploadSocketOps,
                     nextSample = progress.atMs + 250
                     if (samples.size < 480) {
                         fun queue(fd: Int, notSent: Boolean) = try { QueueObservation.decode(ops.sendQueue(fd, notSent)) }
-                            catch (_: Exception) { QueueObservation(false, null, null) }
+                            catch (_: Exception) { QueueObservation(null, null, null) }
                         val queues = owned.map { queue(it.fd, false) }
                         val notSent = owned.map { queue(it.fd, true) }
                         val info = owned.map { try { TcpInfoRecord.decode(ops.info(it.fd)) }
