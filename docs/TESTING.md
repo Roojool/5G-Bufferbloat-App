@@ -176,7 +176,12 @@ checks actual selected r28c from CMake caches/source.properties and debug-only
 harness libraries/components on all ABIs. CI runs these checks and needs no
 external test endpoint. src/testDebug tests cover mapping, absent fields,
 exact byte/hash accounting, protection/cancellation/cleanup failures, bounded
-storage and dynamic settings. Endpoint tests use synthetic partial-write peers.
+storage and dynamic settings. F-03 debug JVM tests additionally cover ordered
+accepted/written hashes, fixed allocation/occupancy bounds, sustained
+backpressure, partial writes/EAGAIN, deficit-round-robin progress for bulk and
+short flows, cancellation/cleanup, half-close/reset and abrupt rate reduction.
+Their injected endpoints and clock use no Android socket or physical network.
+Endpoint tests use synthetic partial-write peers.
 Host tests cover manifest bounds, isolated presets, stable IDs, deterministic
 seeded pairing, redaction, hash classification, stop/continue policy, endpoint
 failure cleanup, PATH/explicit/standard-install TShark discovery, and mocked

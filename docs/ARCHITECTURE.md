@@ -177,6 +177,7 @@ The release implementation must preserve these invariants:
 | VPN lifecycle | `vpn` | Serialized service lifecycle and safe Android VPN ownership |
 | Native boundary | `nativeengine` / `native` | Kotlin/JNI ABI contract and intentionally unavailable native stub |
 | Shaping references | `shaping` | Unit-tested TokenBucket, CoDel-style AQM, and fair-queue reference logic; no live packet path |
+| F-03 stream feasibility | debug `harness.stream` | Deterministic bounded byte queues, pacing, fair scheduling, backpressure and teardown tests; no socket/TUN/route integration |
 | Calibration | `calibration` | Network-state monitoring and independently supplied capacity-sample scaffold; no automatic update path |
 | Validation | `validation` | Validation-gate UI and grade model; no benchmark runs in the current build |
 | Local utilities | `util` | Preferences, notification, user-initiated redacted health-timeline diagnostic |
@@ -206,3 +207,21 @@ endpoint metadata, derives window/ACK/data observations, and marks incomplete
 captures/handshakes PARTIAL or SKIPPED. Derived summaries contain numeric/fixed
 status values only and never infer latency efficacy. Release excludes this seam. It implements neither production
 TCP leg and does not pass Stage 1. See [Experiments](EXPERIMENTS.md).
+
+The debug source set also contains an independent F-03 `StreamPacingRunner`.
+Callers inject nonblocking stream sources/sinks and a clock; the runner itself
+opens no socket and has no Android or production-engine dependency. Each flow
+has a fixed ring allocation, and validation requires the sum of those
+allocations to fit the configured global limit. Reads cannot exceed remaining
+per-flow/global occupancy. An integer byte budget bounds paced writes; deficit
+round robin supplies per-flow service while preserving partial-write offsets.
+Zero-byte reads/writes represent EAGAIN. Full queues suppress upstream reads and
+record their later resumption. Cancellation, errors and stalls report accepted
+but undelivered bytes before deterministic close.
+
+This is a TCP **byte-stream queue after acceptance**, not a packet queue with
+retransmission ownership. It is therefore not a valid CoDel/drop/ECN AQM queue
+under D-09, and the harness exposes no drop operation. A later physical harness
+must add debug-only controlled TCP adapters, protect the remote-facing socket,
+bound/measure kernel send buffers, and retain the same counters before physical
+backpressure or pacing claims can be reviewed.
