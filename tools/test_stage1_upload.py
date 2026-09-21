@@ -1,5 +1,6 @@
 """Synthetic/mocked source tests only. Never discover a device or open a network socket."""
 import copy
+from contextlib import ExitStack
 import importlib.util
 import json
 from pathlib import Path
@@ -17,6 +18,38 @@ spec.loader.exec_module(operator)
 
 
 class UploadTests(unittest.TestCase):
+    def test_adb_cleanup_timeout_preserves_collected_failure_record(self):
+        runs, settings, original = batch.load_manifest(batch.PRESETS / "wifi-upload.json")
+        settings["rtt"] = {"method": "none"}
+        record = {"status": "RESULT", "cleanup_joined": True,
+                  "result": {"outcome": "CANCELLED", "stream": {"total_accepted_bytes": 64}}}
+        args = batch.parser().parse_args(["--preset", "wifi-upload", "--endpoint-address", "192.0.2.1",
+                                         "--bind-address", "192.0.2.1", "--no-tshark"])
+        endpoint_process = Mock()
+        endpoint_process.final.return_value = None
+        with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
+            stack.enter_context(patch.object(batch, "OUTPUT_ROOT", Path(temp)))
+            stack.enter_context(patch.object(batch, "ROOT", Path(temp)))
+            for name, value in {
+                "git_state": {"git_sha": "a" * 40}, "load_manifest": (runs[:1], settings, original),
+                "discover_device": "private", "device_context": {}, "build_and_verify": {},
+                "resolve_capture_setup": {"status": "SKIPPED"}, "EndpointProcess": endpoint_process,
+                "command": subprocess.CompletedProcess([], 0, "", ""), "launch_android": None,
+                "cancel_android": None,
+            }.items():
+                stack.enter_context(patch.object(batch, name, return_value=value))
+            stack.enter_context(patch.object(batch, "remote_result", side_effect=[
+                {"status": "READY"}, batch.Stage1Error("lost connection"), record]))
+            stack.enter_context(patch.object(batch, "adb", side_effect=subprocess.TimeoutExpired("adb", 10)))
+            session, summary = batch.run_batch(args)
+            saved = json.loads((session / "redacted-summary.json").read_text())
+            phone = saved["runs"][0]["phone"]
+            self.assertEqual(64, phone["result"]["stream"]["total_accepted_bytes"])
+            self.assertEqual("HOST_FAILURE", phone["host_completion_reason"])
+            self.assertEqual("UNAVAILABLE", saved["runs"][0]["phone_result_file_cleanup"])
+            self.assertEqual("FAILED_OR_INCONCLUSIVE", summary["runs"][0]["run_status"])
+            endpoint_process.stop.assert_called_once()
+
     def test_cancellation_retains_worker_accounting_and_unavailable_cleanup_is_explicit(self):
         record = {"status": "RESULT", "result": {"outcome": "CANCELLED", "stream": {"total_accepted_bytes": 64}}}
         with patch.object(batch, "cancel_android") as cancel, patch.object(batch, "remote_result", return_value=record) as read:

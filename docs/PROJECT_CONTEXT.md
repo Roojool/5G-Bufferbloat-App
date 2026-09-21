@@ -1,12 +1,21 @@
 # Current Project Context
 
-Snapshot: 2026-09-17. Stage 1 source readiness starts from clean/current main
-`310a24856845cb7edfb7cca18bb2af0600d177bb`, the merge of PR #9, on
-`codex/stage1-physical-ready`. The debug F-03 adapter now connects the existing
+Snapshot: 2026-09-21. PR #10 final engineering review started at clean head
+`9f0252dffb3e059edaf05e6e5d16d2c820a04e64` on `codex/stage1-physical-ready`.
+Fetched current main remains `310a24856845cb7edfb7cca18bb2af0600d177bb`, the
+merge of PR #9; PR #10 targets it without an unmerged dependency. The review
+fixed completed-flow no-progress inflation and preserved collected worker
+evidence when ADB result-file removal times out or fails. Both regressions
+failed before the fixes. Final local checks passed: 64 JVM tests, 80 Python
+tests, debug/instrumentation/release assembly, lint (0 errors, 66 existing
+warnings), three-ABI NDK/packaging verification and 87 local Markdown links.
+Literal output is in EXPERIMENTS; final head and CI accompany the task/PR report.
+The debug F-03 adapter connects the existing
 stream runner to controlled synthetic sources and protected Android/Linux TCP
 sockets. Capability contracts, bounded socket observations and the existing
 operator/endpoint workflow support a later frozen-commit physical campaign.
-No ADB, attached device, emulator, capture or physical experiment was used.
+No ADB, attached device, emulator, capture or physical experiment was used in
+this review. Ponytail Lite and the existing RTK configuration were unchanged.
 **Stage 1 remains IN PROGRESS / UNPASSED.** Final commit/PR accompany the report.
 
 ## Reconciliation and next gate

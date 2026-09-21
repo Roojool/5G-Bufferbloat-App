@@ -378,6 +378,112 @@ changed Git's interpretation of the Windows checkout; normal repository
 No physical test, native runtime probe, instrumentation execution or Stage
 decision is implied. Final commit/PR and remote CI status accompany the task report.
 
+### PR #10 final engineering review (2026-09-21; source checks only)
+
+Started with clean `codex/stage1-physical-ready` at
+`9f0252dffb3e059edaf05e6e5d16d2c820a04e64`. Fetch confirmed current main/base
+`310a24856845cb7edfb7cca18bb2af0600d177bb`; PR #10 was OPEN, MERGEABLE, CLEAN,
+with both required CI runs successful and no review comments. Live protection
+requires the up-to-date `Build, unit test, and lint` check and resolved
+conversations, zero approving reviews, with force-push disabled. The final head
+and its CI results accompany the task/PR report. No merge was performed.
+
+Two focused evidence fixes were required:
+
+- The short flow in the fairness screen accumulated no-progress time after
+  finishing while the bulk flows continued. The counter now stops at the flow's
+  terminal timestamp. No pacing, scheduling or accepted-byte policy changed.
+- An ADB timeout while deleting the app-private result file could escape cleanup
+  and prevent the collected cancellation/failure accounting from reaching the
+  session record. The deletion now has a ten-second timeout and its own
+  `phone_result_file_cleanup` COMPLETE/UNAVAILABLE observation. Collected worker
+  results survive deletion failure; this file status is not FD cleanup evidence.
+
+Review covered protection before bind/connect, single-worker FD ownership,
+bounded rings/sockets/observations/receipts, accepted versus kernel-accepted and
+receiver-confirmed bytes, partial writes/EAGAIN, cancellation/reset/cleanup,
+drain-before-FIN and exact receipt/hash/EOF requirements, send-buffer request and
+readback, optional TCP_INFO/OUTQ/NOT_SENT failure, rate budgets/timing, per-flow
+progress, scoped capability expiry/UNKNOWN behavior, redaction, presets and
+frozen clean-SHA/APK enforcement. No remaining source blocker was identified.
+The accepted-byte queue remains invalid for packet AQM; production native
+availability, route activation, Stage 2 and public claims are unchanged.
+Ponytail Lite review retained the existing runner and batch architecture;
+broader cleanup and new abstractions were unnecessary. RTK configuration was
+not changed.
+
+Literal regression and final validation output (JDK 21, local Windows):
+
+```text
+Before fixes:
+gradlew.bat --no-daemon :app:testDebugUnitTest --tests '*StreamPacingHarnessTest.deficitRoundRobinLetsShortFlowFinishAmongBulkFlows'
+1 test completed, 1 failed
+BUILD FAILED in 25s
+22 actionable tasks: 2 executed, 20 up-to-date
+
+py -3 -m unittest discover -s tools -p test_stage1_upload.py -v
+Ran 12 tests in 0.042s
+FAILED (errors=1)
+subprocess.TimeoutExpired: Command 'adb' timed out after 10 seconds
+
+After fixes:
+gradlew.bat --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+BUILD SUCCESSFUL in 1m 15s
+136 actionable tasks: 32 executed, 104 up-to-date
+JVM XML: tests=64 failures=0 errors=0 skipped=0
+Lint errors=0
+Lint warnings=66
+
+py -3 -m unittest discover -s tools -p 'test_*.py' -v
+Ran 80 tests in 4.267s
+OK
+
+py -3 tools/verify_harness_build.py
+debug/arm64-v8a: selected NDK=28.2.13676358, harness=ON
+debug/armeabi-v7a: selected NDK=28.2.13676358, harness=ON
+debug/x86_64: selected NDK=28.2.13676358, harness=ON
+debug: three production stub libraries; debug harness packaging/manifest gate PASS
+release/arm64-v8a: selected NDK=28.2.13676358, harness=OFF
+release/armeabi-v7a: selected NDK=28.2.13676358, harness=OFF
+release/x86_64: selected NDK=28.2.13676358, harness=OFF
+release: three production stub libraries; debug harness packaging/manifest gate PASS
+release: harness mapping and DEX references=0
+
+py -3 output/stage1_source_review.py (existing local-only inspection script)
+Canonical/native Markdown local links: checked=87 broken=0
+Markdown fragment links: checked=0
+Production sources/build/native ABI delta=EMPTY
+Tracked output files=0
+Optional docs/RADIO_OPTIMIZATION.md=absent
+
+git diff --check
+exit=0
+```
+
+JVM/Python tests and lint executed; instrumentation compilation executed but no
+instrumentation test ran. Release packaging executed; native configuration/build
+and other unchanged work included UP-TO-DATE tasks. Full local logs remain at
+`output/pr10-review-gradle.log` and `output/pr10-review-python.log`; the initial
+failing JVM regression is in `output/pr10-review-regression-gradle.log`.
+No physical run, ADB, installation, emulator, native runtime probe or capture
+was used. Primary sources were rechecked for socket semantics, setup-android's
+packages input, target API, page-size and package-registration deadlines; the
+dated policy text required no change, and Gradle still targets API 35.
+
+All canonical documents were reviewed. PROJECT_CONTEXT records this review;
+ARCHITECTURE clarifies the two corrected observations; TESTING records the
+regressions; this section owns literal evidence. README, LIMITATIONS, ROADMAP,
+DESIGN_DECISIONS, COMPATIBILITY, SOURCE_BUILD, PLAY_COMPLIANCE, PRIVACY,
+CONTRIBUTING, SECURITY and the superseded mobile plan require no change: neither
+public behavior, design/gate order, physical support, build/operator procedure,
+data boundaries nor release/reporting policy changed. AGENTS and native/README
+were reviewed without changes; optional RADIO_OPTIMIZATION is absent. No
+unresolved canonical contradiction was found. Stage 1 remains IN PROGRESS /
+UNPASSED. Real protection/binding, kernel-buffer behavior, pacing/fairness,
+FIN/reset/cancel/recovery, physical integrity and efficacy remain for the frozen
+physical campaign and reviewed go/narrow/defer decision; source success is not
+that gate.
+
 ### F-04 — adaptive delay/load autorate
 
 **Hypothesis:** bounded delay/load feedback responds more usefully to capacity

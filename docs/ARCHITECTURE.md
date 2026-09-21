@@ -255,6 +255,11 @@ sample intervals, configured rate, interval write-acceptance rates, TCP_INFO,
 SIOCOUTQ and SIOCOUTQNSD. Missing optional observations stay null with typed
 failure evidence. Allocation, occupancy, SO_SNDBUF request/readback, queued
 sequence bytes, throughput and radio/wire observations are not interchangeable.
+Per-flow no-progress time stops at that flow's terminal timestamp; a completed
+short flow does not accrue idle time while other flows finish. Host removal of
+the app-private result file has a separate COMPLETE/UNAVAILABLE status and a
+ten-second command timeout; failure cannot discard collected worker evidence
+or imply socket cleanup success.
 The owner endpoint hashes synthetic uploads only; it is not a project relay.
 
 Debug capability records use mandatory flags, UNKNOWN/AVAILABLE/UNAVAILABLE,

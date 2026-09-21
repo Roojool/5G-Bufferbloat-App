@@ -211,6 +211,11 @@ frozen clean-SHA enforcement, cancellation evidence retention, report redaction
 and unsuitable/inconclusive download topology. They open no network socket and
 invoke no ADB. Physical procedures are centralized in EXPERIMENTS; no source
 test declares a physical gate passed.
+The final PR #10 regression checks also assert that a finished short flow's
+no-progress counter excludes other flows' remaining lifetime, and that an ADB
+result-file cleanup timeout preserves the collected failure/byte accounting in
+the session summary. Both checks failed before their focused fixes; the host
+check mocks the entire batch path and does not start a device or endpoint.
 Focused report tests also prove that only the allowlisted broad runtime scope is
 rendered, private decoys and arbitrary kernel suffixes are absent, artifact
 references are fixed session-relative redacted filenames, and consecutive run

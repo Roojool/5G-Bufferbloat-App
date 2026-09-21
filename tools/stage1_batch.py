@@ -892,7 +892,13 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             load_code = load_ping.stop() if load_ping else None
             if capture:
                 capture.stop()
-            adb(serial, "shell", "run-as", PACKAGE, "rm", "-f", f"files/stage1_batch/{token}.json", check=False)
+            # Device loss during file cleanup must not discard collected worker evidence.
+            try:
+                removed = adb(serial, "shell", "run-as", PACKAGE, "rm", "-f",
+                              f"files/stage1_batch/{token}.json", timeout=10, check=False)
+                phone_file_cleanup = "COMPLETE" if removed.returncode == 0 else "UNAVAILABLE"
+            except (Stage1Error, subprocess.TimeoutExpired, OSError):
+                phone_file_cleanup = "UNAVAILABLE"
         load_context = {"status": phone["host_completion_reason"]} if phone and "host_completion_reason" in phone else phone
         load_result = (load_ping_summary(load_ping, load_code, int(rtt["load_count"]), load_context)
                        if load_ping else {"method": "none", "status": "SKIPPED"})
@@ -913,7 +919,8 @@ def run_batch(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
         result = {"run_id": run["run_id"], "variant": run["variant"],
             "pair": run.get("pair"), "order": run.get("order"), "run_status": layers["run_status"],
             "expected_bytes": expected_bytes, "expected_sha256": expected_hash,
-            "phone": phone, "endpoint": endpoint_result, "rtt": {"method": "adb_shell_ping_round_trip",
+            "phone": phone, "phone_result_file_cleanup": phone_file_cleanup,
+            "endpoint": endpoint_result, "rtt": {"method": "adb_shell_ping_round_trip",
                 "idle": idle_result, "under_load": load_result, "interpretation": "independent round-trip observation; not one-way queue delay"},
             "capture": {"status": capture_status, "reason": capture_reason,
                 "shutdown": capture.shutdown if capture else None,

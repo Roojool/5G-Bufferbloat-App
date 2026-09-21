@@ -264,7 +264,8 @@ class StreamPacingRunner(
                             elapsed,
                         )
                     }
-                    state.longestNoProgressMs = maxOf(state.longestNoProgressMs, now - state.lastProgressMs)
+                    val observedUntil = state.completedAtMs?.let { start + it } ?: now
+                    state.longestNoProgressMs = maxOf(state.longestNoProgressMs, observedUntil - state.lastProgressMs)
                 }
 
                 observe(StreamProgress(elapsed,
