@@ -34,12 +34,18 @@ Algorithm tests and lifecycle scaffolding are not a working shaper.
    actual transport effect, latency/throughput and safe failure on physical
    devices. Do not infer remote control from an app-facing gVisor window.
 3. Deterministic debug-source tests now establish the basic bounded stream
-   pacing/backpressure mechanics. Add a controlled physical TCP adapter and
-   kernel socket-buffer evidence before completing feasibility. The introduced
+   pacing/backpressure mechanics. A debug-only controlled synthetic-source /
+   protected TCP adapter and separate userspace/kernel observations now exist;
+   physical socket-buffer, pacing, fairness and backpressure evidence is still
+   required before completing feasibility. The introduced
    accepted-byte queues are not valid packet AQM queues under D-09.
-4. Define capability/device framework contracts: mandatory forwarding/lifecycle
+4. Debug capability/device framework contracts now model mandatory forwarding/lifecycle
    requirements; optional probes; unknown/unavailable/available outcomes; feature
    disablement and redacted reasons; evidence scoped by Android/kernel/ABI/network.
+   They are source-tested and disconnected from production route activation.
+5. Use the existing stateless operator's six presets and frozen-commit option
+   for the procedures in EXPERIMENTS. No physical campaign ran in this change.
+   A topology without baseline loaded-latency inflation is unsuitable/inconclusive.
 
 **Exit:** reviewed literal feasibility results and a go/narrow/defer decision.
 Absent or negative download evidence keeps that feature disabled. A proven

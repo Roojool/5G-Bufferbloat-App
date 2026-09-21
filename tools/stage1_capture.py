@@ -339,8 +339,9 @@ def analyze_session(session: Path, tshark: str | None) -> dict[str, Any]:
         # Never let an unexpected symlink escape the private session directory.
         if not run_dir.resolve().is_relative_to(session):
             raise ValueError("run directory escapes session")
-        derived = analyze_capture(tshark, run_dir / "sender.private.pcapng", original["bind_address"],
-                                  int(original["port"]), run_dir, int(run["config"]["expectedBytes"]))
+        derived = (skipped("UPLOAD_CAPTURE_REQUIRES_REVIEW") if run["config"].get("experiment") == "upload"
+                   else analyze_capture(tshark, run_dir / "sender.private.pcapng", original["bind_address"],
+                                        int(original["port"]), run_dir, int(run["config"]["expectedBytes"])))
         derived["planned_cadence"] = cadence_plan(run["config"])
         try:
             record = json.loads((run_dir / "record.private.json").read_text(encoding="utf-8"))

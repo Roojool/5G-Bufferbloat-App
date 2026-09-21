@@ -26,11 +26,14 @@ These behaviors are documented because they are relevant to privacy and must be 
 
 ### Debug-only owner socket experiments
 
-The optional internal F-01/F-02 Activity opens ordinary protected sockets only
+The optional internal F-01/F-02/F-03 harness opens ordinary protected sockets only
 to a numeric test endpoint explicitly supplied by the owner. It creates no VPN
 route and reads only the owner-requested synthetic test transfer; it does not
-capture other apps' traffic. It computes byte counts and SHA-256 incrementally,
-and reads socket-option/TCP_INFO observations. No payload is retained in results.
+capture other apps' traffic. F-03 generates bounded synthetic upload bytes, checks
+receiver hash receipts and reads send-buffer/queue observations. It computes byte
+counts and SHA-256 incrementally and reads socket-option/TCP_INFO observations.
+No payload is retained in results. Capability scope contains numeric Android API,
+kernel family, allowlisted ABI, transport and IP family, never phone-model rules.
 In the manual UI, address/port and selected Network remain transient input and
 are not exported. Host batch automation stores its input manifest, endpoint logs,
 optional sender capture and RTT command output only below the repository's

@@ -145,6 +145,7 @@ class StreamPacingHarnessTest {
         assertEquals("COMPLETE", result.outcome)
         assertTrue(result.flows[1].completedAtMs!! < result.flows[0].completedAtMs!!)
         assertTrue(result.flows[1].completedAtMs!! < result.flows[2].completedAtMs!!)
+        assertTrue(result.flows[1].longestNoProgressMs <= result.flows[1].completedAtMs!!)
         assertTrue(result.flows.all { it.writtenBytes > 0 })
         data.indices.forEach { assertEquals(data[it].toList(), sinks[it].output.toByteArray().toList()) }
     }

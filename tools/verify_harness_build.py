@@ -32,6 +32,11 @@ def main():
             manifest = archive.read("AndroidManifest.xml")
             components = ("HarnessActivity", "HarnessService", "BatchHarnessActivity")
             if variant == "release":
+                mapping = (ROOT / "app/build/outputs/mapping/release/mapping.txt").read_text(encoding="utf-8")
+                assert "com.bufferbloatshaper.harness." not in mapping, "debug harness entered release mapping"
+                for entry in entries:
+                    if entry.endswith(".dex"):
+                        assert b"Lcom/bufferbloatshaper/harness/" not in archive.read(entry)
                 for encoding in ("utf-8", "utf-16-le"):
                     for component in components:
                         assert component.encode(encoding) not in manifest
@@ -39,6 +44,8 @@ def main():
                 for component in components:
                     assert any(component.encode(encoding) in manifest for encoding in ("utf-8", "utf-16-le")), component
         print(f"{variant}: three production stub libraries; debug harness packaging/manifest gate PASS")
+        if variant == "release":
+            print("release: harness mapping and DEX references=0")
 
 
 if __name__ == "__main__":

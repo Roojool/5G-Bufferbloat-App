@@ -27,6 +27,7 @@ class BatchHarnessActivity : Activity() {
     private lateinit var resultToken: String
     private lateinit var transport: BatchTransport
     private var config: ExperimentConfig? = null
+    private var upload: UploadConfig? = null
     private var network: Network? = null
     private var deadlineMs = 0L
 
@@ -36,7 +37,11 @@ class BatchHarnessActivity : Activity() {
             service = harness
             BatchRunRegistry.attach(runId, harness)
             val request = requireNotNull(config)
-            if (!harness.start(request, network)) {
+            val scope = CapabilityScope(android.os.Build.VERSION.SDK_INT,
+                Regex("^[0-9]{1,3}\\.[0-9]{1,3}").find(System.getProperty("os.version").orEmpty())?.value ?: "UNKNOWN",
+                android.os.Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "armeabi-v7a", "x86_64") } ?: "UNKNOWN",
+                transport, request.address.contains(':'))
+            if (!harness.start(request, network, upload, scope)) {
                 finishWith("HARNESS_BUSY")
                 return
             }
@@ -54,7 +59,9 @@ class BatchHarnessActivity : Activity() {
         override fun run() {
             val harness = service
             val result = harness?.result
-            if (result != null && harness.running.not()) {
+            if (harness?.uploadResult != null && harness.running.not()) {
+                finishWith("RESULT")
+            } else if (result != null && harness.running.not()) {
                 finishWith("RESULT", result)
             } else if (System.currentTimeMillis() >= deadlineMs) {
                 harness?.cancel()
@@ -116,6 +123,8 @@ class BatchHarnessActivity : Activity() {
             finishInvalid(command.getStringExtra("result_token"), "INVALID_TOKEN"); return
         }
         terminal = false
+        upload = null
+        config = null
         if (VpnService.prepare(this) != null) {
             finishWith("CONSENT_REQUIRED")
             return
@@ -144,6 +153,9 @@ class BatchHarnessActivity : Activity() {
                         optional(change, "clamp"),
                         if (change.has("cadenceMs")) change.getLong("cadenceMs") else null)
                 }, json.optLong("durationMs", 60_000), json.optLong("stallTimeoutMs", 10_000)).also { it.validate() }
+            if (json.optString("experiment", "download") == "upload") {
+                upload = parseUploadConfig(requireNotNull(config), json)
+            }
         } catch (_: Exception) {
             finishWith("INVALID_CONFIG")
             return
@@ -203,6 +215,7 @@ class BatchHarnessActivity : Activity() {
             put("network_transport", transport.wireName)
             put("cleanup_joined", service?.cleanupJoined ?: JSONObject.NULL)
             if (result != null && request != null) put("result", JSONObject(result.toJson(request)))
+            service?.uploadResult?.let { put("result", it.toJson(requireNotNull(upload))) }
         }
         writeFile(resultToken, json)
     }
